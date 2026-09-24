@@ -1,0 +1,52 @@
+# ==========================
+# RSSB Office Data Platform
+# ==========================
+
+# ----- Python -----
+backend/.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+
+# ----- Node / Next.js -----
+node_modules/
+frontend/.next/
+frontend/out/
+frontend/next-env.d.ts
+
+# ----- Environment -----
+.env
+.env.local
+.env.*.local
+
+# ----- Data directories -----
+data/uploads/
+data/processed/
+data/exports/
+
+# ----- PostgreSQL -----
+postgres-data/
+
+# ----- IDE / Editor -----
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ----- OS -----
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ----- Logs -----
+*.log
+npm-debug.log*
+
+# ----- Misc -----
+*.bak
+*.tmp
