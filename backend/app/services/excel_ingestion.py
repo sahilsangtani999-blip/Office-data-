@@ -137,27 +137,47 @@ def _classify_sheet(headers: List[str]) -> Tuple[Optional[str], Dict[str, int]]:
     Returns (concept_type, column_map) where column_map maps role to index.
     If the sheet does not match known concepts, returns (None, {}).
     """
+    # If sheet is metadata/documentation or test queries
+    all_headers_str = " ".join(headers)
+    if any(w in all_headers_str for w in ("user question", "test cases", "expected source", "why it exists", "what it contains", "query type", "test id", "expected behaviour", "prototype calculation")):
+        return None, {}
+
     col_map: Dict[str, int] = {}
     
-    # 1. Match Attendance
-    # Needs: date, ghar/center, attendance/count
+    # 1. Date
     for idx, h in enumerate(headers):
-        if any(w in h for w in ("date", "tarikh", "day")):
+        if any(w in h for w in ("date", "tarikh", "day")) and "filter" not in h:
             col_map.setdefault("date", idx)
-        if any(w in h for w in ("satsang ghar", "ghar", "center", "location", "place")):
-            col_map.setdefault("ghar", idx)
-        
+
+    # 2. Satsang Ghar (prioritize specific 'satsang ghar' or 'ghar' over generic 'center' or 'location')
+    for idx, h in enumerate(headers):
+        if any(w in h for w in ("satsang ghar", "satsang_ghar", "ghar")) and "filter" not in h:
+            col_map["ghar"] = idx
+            break
+    if "ghar" not in col_map:
+        for idx, h in enumerate(headers):
+            if any(w in h for w in ("center", "location", "place")) and "filter" not in h:
+                col_map["ghar"] = idx
+                break
+
+    # 3. Vehicle / Wheel
+    for idx, h in enumerate(headers):
         is_vehicle = any(w in h for w in ("vehicle", "wheel", "2 wheeler", "4 wheeler", "car", "scooter", "bike"))
-        if is_vehicle:
+        if is_vehicle and "filter" not in h:
             col_map.setdefault("vehicle", idx)
 
+    # 4. Attendance
+    for idx, h in enumerate(headers):
+        is_vehicle = any(w in h for w in ("vehicle", "wheel", "2 wheeler", "4 wheeler", "car", "scooter", "bike"))
         is_attendance = any(w in h for w in ("attendance", "headcount", "sangat", "present", "total attendance")) or ("count" in h and not is_vehicle)
-        if is_attendance:
+        if is_attendance and "filter" not in h:
             col_map.setdefault("attendance", idx)
 
-        if any(w in h for w in ("karta", "speaker", "sk", "reader", "sr", "person", "naam", "name", "duty", "sewadar")):
+    # 5. Person & Role
+    for idx, h in enumerate(headers):
+        if any(w in h for w in ("karta", "speaker", "sk", "reader", "sr", "person", "naam", "name", "duty", "sewadar")) and "filter" not in h and "source" not in h:
             col_map.setdefault("person", idx)
-        if any(w in h for w in ("role", "duty type", "sewa")):
+        if any(w in h for w in ("role", "duty type", "sewa")) and "filter" not in h:
             col_map.setdefault("role", idx)
 
     # Classification rules without speculative guessing:
@@ -339,18 +359,35 @@ def ingest_excel_file(
             result.records_requiring_review += 1
             continue
 
-        # Find header row (first non-empty row with text)
+        # Find header row
+        # 1. First pass: look for a row within top 10 rows that classifies into a known concept
         header_row_idx = None
         raw_headers = None
+        concept_type = None
+        col_map = {}
 
-        for idx, row in enumerate(rows):
-            if any(cell is not None and str(cell).strip() != "" for cell in row):
-                # Count non-empty strings
-                non_empty = [str(c).strip() for c in row if c is not None and str(c).strip() != ""]
-                if len(non_empty) >= 1:
+        for idx, row in enumerate(rows[:10]):
+            non_empty = [str(c).strip() for c in row if c is not None and str(c).strip() != ""]
+            if len(non_empty) >= 2:
+                candidate_raw = [str(c).strip() if c is not None else "" for c in row]
+                candidate_norm = [_normalize_header(h) for h in candidate_raw]
+                c_type, c_map = _classify_sheet(candidate_norm)
+                if c_type:
                     header_row_idx = idx
-                    raw_headers = [str(c).strip() if c is not None else "" for c in row]
+                    raw_headers = candidate_raw
+                    concept_type = c_type
+                    col_map = c_map
                     break
+
+        # 2. Second pass fallback: first row with text
+        if header_row_idx is None:
+            for idx, row in enumerate(rows):
+                if any(cell is not None and str(cell).strip() != "" for cell in row):
+                    non_empty = [str(c).strip() for c in row if c is not None and str(c).strip() != ""]
+                    if len(non_empty) >= 1:
+                        header_row_idx = idx
+                        raw_headers = [str(c).strip() if c is not None else "" for c in row]
+                        break
 
         if header_row_idx is None or not raw_headers:
             result.review_items.append({
@@ -361,8 +398,9 @@ def ingest_excel_file(
             result.records_requiring_review += 1
             continue
 
-        normalized_headers = [_normalize_header(h) for h in raw_headers]
-        concept_type, col_map = _classify_sheet(normalized_headers)
+        if not concept_type:
+            normalized_headers = [_normalize_header(h) for h in raw_headers]
+            concept_type, col_map = _classify_sheet(normalized_headers)
 
         if not concept_type:
             result.review_items.append({

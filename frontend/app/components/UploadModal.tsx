@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useRef, useState } from "react";
+import { getAuthHeaders } from "../auth";
 import { IngestionResponse } from "../types";
 import styles from "./UploadModal.module.css";
 
@@ -114,20 +115,38 @@ export default function UploadModal({
       // Try relative API endpoint via Next.js rewrite or direct backend
       let response = await fetch("/api/v1/documents/upload", {
         method: "POST",
+        headers: {
+          ...getAuthHeaders(),
+        },
         body: formData,
       });
 
-      // Fallback directly to localhost:8000 if rewrite proxy fails
-      if (!response.ok && response.status === 404) {
-        response = await fetch("http://127.0.0.1:8000/api/v1/documents/upload", {
-          method: "POST",
-          body: formData,
-        });
+      // Fallback directly to localhost:8000 if rewrite proxy fails (e.g. 404, 500, 502, 503, 504)
+      if (!response.ok && [404, 500, 502, 503, 504].includes(response.status)) {
+        try {
+          const directResponse = await fetch("http://127.0.0.1:8000/api/v1/documents/upload", {
+            method: "POST",
+            headers: {
+              ...getAuthHeaders(),
+            },
+            body: formData,
+          });
+          response = directResponse;
+        } catch {
+          // If direct connection also fails, proceed to error evaluation below
+        }
       }
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => null);
-        const detail = errorData?.detail || `Upload failed with status ${response.status}`;
+        let detail = errorData?.detail;
+        if (!detail) {
+          if ([500, 502, 503, 504].includes(response.status)) {
+            detail = "Cannot connect to the office server. Please verify the backend service is running on http://127.0.0.1:8000.";
+          } else {
+            detail = `Upload failed with status ${response.status}`;
+          }
+        }
         throw new Error(detail);
       }
 
@@ -142,8 +161,8 @@ export default function UploadModal({
       const friendlyMsg =
         err?.message?.includes("Unsupported file format")
           ? "Unsupported file format. Please upload an Excel (.xlsx, .xlsm) or PDF (.pdf) file."
-          : err?.message?.includes("Failed to fetch")
-          ? "Cannot connect to the office server. Please verify the backend service is running."
+          : err?.message?.includes("Failed to fetch") || err?.message?.includes("connect to the office server")
+          ? "Cannot connect to the office server. Please verify the backend service is running on http://127.0.0.1:8000."
           : err?.message || "An unexpected error occurred during upload. Please try again.";
       setErrorMessage(friendlyMsg);
     } finally {

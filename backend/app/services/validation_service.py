@@ -981,3 +981,255 @@ def mark_needs_correction(
         "reviewer": reviewer.username,
         "instructions": instructions,
     }
+
+
+def get_review_history(
+    db: Session,
+    document_id: Union[str, uuid.UUID],
+) -> List[Dict[str, Any]]:
+    """Retrieve review history audit trail for a document from SourceReference."""
+    doc_uuid = uuid.UUID(str(document_id))
+    entries = (
+        db.query(SourceReference)
+        .filter(
+            SourceReference.document_id == doc_uuid,
+            SourceReference.cell_or_range.like("review_audit:%"),
+        )
+        .order_by(SourceReference.created_at.desc())
+        .all()
+    )
+    history = []
+    for sr in entries:
+        if sr.source_text:
+            try:
+                data = json.loads(sr.source_text)
+                reviewer_val = data.get("reviewer_name") or data.get("reviewer_id") or "Reviewer"
+                history.append({
+                    "id": str(sr.id),
+                    "action": data.get("action", "unknown"),
+                    "reviewer": reviewer_val,
+                    "reviewer_name": reviewer_val,
+                    "notes": data.get("notes"),
+                    "reason": data.get("reason"),
+                    "instructions": data.get("instructions"),
+                    "timestamp": data.get("timestamp") or (sr.created_at.isoformat() if sr.created_at else ""),
+                })
+            except (json.JSONDecodeError, TypeError):
+                pass
+    return history
+
+
+def get_document_records(
+    db: Session,
+    document_id: Union[str, uuid.UUID],
+) -> List[Dict[str, Any]]:
+    """Retrieve all structured entity records associated with a document via SourceReference."""
+    doc_uuid = uuid.UUID(str(document_id))
+    doc = db.query(Document).filter(Document.id == doc_uuid).first()
+    if not doc:
+        raise ValueError(f"Document with ID '{document_id}' not found.")
+
+    records: List[Dict[str, Any]] = []
+
+    # 1. Attendance records
+    att_records = (
+        db.query(Attendance)
+        .join(SourceReference, Attendance.source_reference_id == SourceReference.id)
+        .filter(SourceReference.document_id == doc_uuid)
+        .all()
+    )
+    for att in att_records:
+        sr = att.source_reference
+        extracted = {}
+        if sr and sr.source_text:
+            try:
+                extracted = json.loads(sr.source_text)
+            except Exception:
+                extracted = {"raw": sr.source_text}
+
+        records.append({
+            "id": str(att.id),
+            "record_type": "attendance",
+            "date": str(att.date) if att.date else None,
+            "status": att.status,
+            "raw_value": att.raw_value or (str(att.count_value) if att.count_value is not None else None),
+            "satsang_ghar": att.satsang_ghar.name if att.satsang_ghar else None,
+            "summary": f"Attendance: {att.count_value}" if att.count_value is not None else f"Raw count: {att.raw_value}",
+            "count_value": att.count_value,
+            "source_reference_id": str(sr.id) if sr else None,
+            "sheet_name": sr.sheet_name if sr else None,
+            "row_number": sr.row_number if sr else None,
+            "page_number": sr.page_number if sr else None,
+            "cell_or_range": sr.cell_or_range if sr else None,
+            "extracted_data": extracted,
+            "document_name": doc.original_filename,
+        })
+
+    # 2. Assignment records
+    asgn_records = (
+        db.query(Assignment)
+        .join(SourceReference, Assignment.source_reference_id == SourceReference.id)
+        .filter(SourceReference.document_id == doc_uuid)
+        .all()
+    )
+    for asgn in asgn_records:
+        sr = asgn.source_reference
+        extracted = {}
+        if sr and sr.source_text:
+            try:
+                extracted = json.loads(sr.source_text)
+            except Exception:
+                extracted = {"raw": sr.source_text}
+
+        p_name = asgn.person.name if asgn.person else None
+        r_code = asgn.role.code if asgn.role else None
+        r_name = asgn.role.name if asgn.role else None
+        role_label = r_code or r_name or "Sewadar"
+
+        records.append({
+            "id": str(asgn.id),
+            "record_type": "assignment",
+            "date": str(asgn.date) if asgn.date else None,
+            "status": asgn.status,
+            "raw_value": asgn.description,
+            "satsang_ghar": asgn.satsang_ghar.name if asgn.satsang_ghar else None,
+            "person_name": p_name,
+            "role_code": r_code,
+            "role_name": r_name,
+            "summary": f"{p_name or 'Sewadar'} ({role_label})",
+            "source_reference_id": str(sr.id) if sr else None,
+            "sheet_name": sr.sheet_name if sr else None,
+            "row_number": sr.row_number if sr else None,
+            "page_number": sr.page_number if sr else None,
+            "cell_or_range": sr.cell_or_range if sr else None,
+            "extracted_data": extracted,
+            "document_name": doc.original_filename,
+        })
+
+    # 3. VehicleWheelData records
+    veh_records = (
+        db.query(VehicleWheelData)
+        .join(SourceReference, VehicleWheelData.source_reference_id == SourceReference.id)
+        .filter(SourceReference.document_id == doc_uuid)
+        .all()
+    )
+    for veh in veh_records:
+        sr = veh.source_reference
+        extracted = {}
+        if sr and sr.source_text:
+            try:
+                extracted = json.loads(sr.source_text)
+            except Exception:
+                extracted = {"raw": sr.source_text}
+
+        records.append({
+            "id": str(veh.id),
+            "record_type": "vehicle_wheel",
+            "date": str(veh.date) if veh.date else None,
+            "status": veh.status,
+            "raw_value": veh.raw_value or (str(veh.count_value) if veh.count_value is not None else None),
+            "satsang_ghar": veh.satsang_ghar.name if veh.satsang_ghar else None,
+            "vehicle_type": veh.vehicle_type,
+            "count_value": veh.count_value,
+            "summary": f"{veh.vehicle_type or 'Vehicle'}: {veh.count_value if veh.count_value is not None else veh.raw_value}",
+            "source_reference_id": str(sr.id) if sr else None,
+            "sheet_name": sr.sheet_name if sr else None,
+            "row_number": sr.row_number if sr else None,
+            "page_number": sr.page_number if sr else None,
+            "cell_or_range": sr.cell_or_range if sr else None,
+            "extracted_data": extracted,
+            "document_name": doc.original_filename,
+        })
+
+    return records
+
+
+def enrich_issue(
+    db: Session,
+    issue: Union[ValidationIssue, Dict[str, Any]],
+    doc_name: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Enrich validation issue with raw value, extracted data, record details, and document name."""
+    if isinstance(issue, ValidationIssue):
+        data = issue.to_dict()
+    else:
+        data = dict(issue)
+
+    data["document_name"] = doc_name
+
+    raw_value = None
+    extracted_value = None
+    record_details = None
+
+    sr_id = data.get("source_reference_id")
+    if sr_id:
+        try:
+            sr_uuid = uuid.UUID(str(sr_id))
+            sr = db.query(SourceReference).filter(SourceReference.id == sr_uuid).first()
+            if sr and sr.source_text:
+                raw_value = sr.source_text
+                try:
+                    extracted_value = json.loads(sr.source_text)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    rec_id = data.get("record_id")
+    rec_type = data.get("record_type")
+    if rec_id and rec_type:
+        try:
+            rec_uuid = uuid.UUID(str(rec_id))
+            rec_type_lower = rec_type.lower()
+            if "attendance" in rec_type_lower:
+                att = db.query(Attendance).filter(Attendance.id == rec_uuid).first()
+                if att:
+                    record_details = {
+                        "id": str(att.id),
+                        "record_type": "Attendance",
+                        "date": str(att.date) if att.date else None,
+                        "count_value": att.count_value,
+                        "raw_value": att.raw_value,
+                        "status": att.status,
+                        "satsang_ghar": att.satsang_ghar.name if att.satsang_ghar else None,
+                    }
+                    if not raw_value:
+                        raw_value = att.raw_value
+            elif "assignment" in rec_type_lower:
+                asgn = db.query(Assignment).filter(Assignment.id == rec_uuid).first()
+                if asgn:
+                    record_details = {
+                        "id": str(asgn.id),
+                        "record_type": "Assignment",
+                        "date": str(asgn.date) if asgn.date else None,
+                        "person": asgn.person.name if asgn.person else None,
+                        "role": asgn.role.code if asgn.role else None,
+                        "status": asgn.status,
+                        "satsang_ghar": asgn.satsang_ghar.name if asgn.satsang_ghar else None,
+                        "description": asgn.description,
+                    }
+                    if not raw_value:
+                        raw_value = asgn.description
+            elif "vehicle" in rec_type_lower:
+                veh = db.query(VehicleWheelData).filter(VehicleWheelData.id == rec_uuid).first()
+                if veh:
+                    record_details = {
+                        "id": str(veh.id),
+                        "record_type": "VehicleWheelData",
+                        "date": str(veh.date) if veh.date else None,
+                        "vehicle_type": veh.vehicle_type,
+                        "count_value": veh.count_value,
+                        "raw_value": veh.raw_value,
+                        "status": veh.status,
+                        "satsang_ghar": veh.satsang_ghar.name if veh.satsang_ghar else None,
+                    }
+                    if not raw_value:
+                        raw_value = veh.raw_value
+        except Exception:
+            pass
+
+    data["raw_value"] = raw_value
+    data["extracted_value"] = extracted_value
+    data["record_details"] = record_details
+    return data
+

@@ -89,3 +89,125 @@ export interface SourcePreviewData {
   relevance_explanation: string;
   associated_records?: Array<Record<string, any>>;
 }
+
+export interface AuthUser {
+  id: string;
+  username: string;
+  email: string;
+  full_name?: string | null;
+  role: "admin" | "reviewer" | "uploader" | "viewer";
+  permissions: string[];
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface TokenResponse {
+  access_token: string;
+  token_type: string;
+  expires_in: number;
+  user: AuthUser;
+}
+
+export type ReportType = "monthly" | "attendance_summary" | "duty_summary" | "vehicle_report";
+
+export interface ReportItem {
+  id: string;
+  name: string;
+  report_type: ReportType;
+  reporting_period_start?: string | null;
+  reporting_period_end?: string | null;
+  status: string;
+  created_by: string;
+  created_at?: string | null;
+  updated_at?: string | null;
+  export_xlsx_url?: string | null;
+  export_csv_url?: string | null;
+}
+
+export interface ReportDetail extends ReportItem {
+  summary_kpis?: Record<string, any> | null;
+  generated_files?: Record<string, any> | null;
+}
+
+export interface ReportCreateRequest {
+  report_type: ReportType;
+  name?: string | null;
+  reporting_period_start?: string | null;
+  reporting_period_end?: string | null;
+  satsang_ghar_id?: string | null;
+  formats?: string[];
+}
+
+export interface DocumentItem {
+  id: string;
+  original_filename: string;
+  document_type?: string | null;
+  status: string;
+  data_source_name?: string | null;
+  created_at: string;
+  updated_at: string;
+  version_count: number;
+  total_records: number;
+  valid_count: number;
+  needs_review_count: number;
+  invalid_count: number;
+  warnings_count: number;
+  errors_count: number;
+  validation_status: string;
+}
+
+export interface ValidationIssueItem {
+  issue_type: string;
+  severity: "error" | "warning" | "info" | string;
+  message: string;
+  record_type?: string | null;
+  record_id?: string | null;
+  source_reference_id?: string | null;
+  page_number?: number | null;
+  sheet_name?: string | null;
+  row_number?: number | null;
+  cell_or_range?: string | null;
+  raw_value?: string | null;
+  extracted_value?: Record<string, any> | null;
+  record_details?: Record<string, any> | null;
+  document_name?: string | null;
+}
+
+export interface ReviewHistoryItem {
+  id: string;
+  action: string;
+  reviewer_name: string;
+  notes?: string | null;
+  reason?: string | null;
+  instructions?: string | null;
+  timestamp: string;
+}
+
+export interface DocumentRecordItem {
+  record_type: string;
+  record_id: string;
+  date?: string | null;
+  satsang_ghar_id?: string | null;
+  source_reference_id?: string | null;
+  sheet_name?: string | null;
+  row_number?: number | null;
+  page_number?: number | null;
+  details?: Record<string, any>;
+}
+
+export interface ValidationResultData {
+  document_id: string;
+  document_name?: string | null;
+  version_id?: string | null;
+  validation_status: string;
+  total_records_examined: number;
+  valid_count: number;
+  needs_review_count: number;
+  invalid_count: number;
+  warnings_count: number;
+  errors_count: number;
+  validation_timestamp: string;
+  issues: ValidationIssueItem[];
+  review_history?: ReviewHistoryItem[] | null;
+}
+

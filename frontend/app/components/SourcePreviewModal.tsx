@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import { getAuthHeaders } from "../auth";
 import { SourcePreviewData } from "../types";
 import styles from "./SourcePreviewModal.module.css";
 
@@ -21,7 +22,11 @@ export default function SourcePreviewModal({ sourceId, onClose }: SourcePreviewM
     setLoading(true);
     setError(null);
 
-    fetch(`/api/v1/sources/${sourceId}/preview`)
+    fetch(`/api/v1/sources/${sourceId}/preview`, {
+      headers: {
+        ...getAuthHeaders(),
+      },
+    })
       .then(async (res) => {
         if (!res.ok) {
           const errData = await res.json().catch(() => ({}));

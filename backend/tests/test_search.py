@@ -632,3 +632,113 @@ class TestSearchFoundation(unittest.TestCase):
         self.assertEqual(response_malformed.status_code, 404)
         self.assertIn("Must be a valid UUID", response_malformed.json()["detail"])
 
+
+class TestKilaRoadSearchRegression(unittest.TestCase):
+    """
+    Regression test suite for Kila Road search entity filtering.
+    
+    Verifies:
+    1. Query planner extracts Satsang Ghar 'Kila Road' from natural language.
+    2. SearchService filters records strictly by Satsang Ghar BEFORE aggregation.
+    3. In test data containing both Sukhliya (78, 86, 94, 102) and Kila Road (121, 128, 133, 139):
+       - Average = 130.25 (Sum: 521 across 4 records)
+       - Total records = 4
+       - Sukhliya records must NOT appear in the calculation or Supporting Records.
+    4. Full POST /api/v1/query endpoint returns identical filtered results.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        _clean_tables()
+        cls.db = SessionLocal()
+        cls.client = TestClient(app)
+        october_fixture = FIXTURES_DIR / "RSSB_Dummy_Attendance_October_2026.xlsx"
+        ingest_excel_file(
+            cls.db,
+            october_fixture,
+            original_filename="RSSB_Dummy_Attendance_October_2026.xlsx",
+            auto_commit=True,
+        )
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.db.close()
+        _clean_tables()
+
+    def setUp(self):
+        self.planner = DeterministicQueryPlanner(self.db)
+        self.search_service = SearchService(self.db)
+
+    def test_query_plan_extracts_kila_road(self):
+        """Planner must extract Satsang Ghar 'Kila Road' from natural language query."""
+        q = "find the average attendance of kila road"
+        plan_res = self.planner.plan(q)
+
+        self.assertFalse(plan_res.is_ambiguous)
+        self.assertIsNotNone(plan_res.plan)
+        plan = plan_res.plan
+        self.assertEqual(plan.record_type, "attendance")
+        self.assertEqual(plan.satsang_ghar, "Kila Road")
+        self.assertEqual(plan.intent, "average")
+        self.assertEqual(plan.numeric_operation, "average")
+        self.assertIn("satsang_ghar", plan.filters)
+        self.assertEqual(plan.filters["satsang_ghar"]["value"], "Kila Road")
+
+    def test_kila_road_average_attendance_filtering(self):
+        """
+        Verify search filters by Kila Road BEFORE calculating average.
+        Kila Road records: 121, 128, 133, 139 -> Average = 130.25, Records = 4.
+        Sukhliya records must NOT appear in the calculation or Supporting Records.
+        """
+        q = "find the average attendance of kila road"
+        res = self.search_service.search(q)
+
+        self.assertEqual(res.status, "success")
+        self.assertFalse(res.clarification_required)
+        self.assertEqual(res.total_records, 4)
+        self.assertIsNotNone(res.calculation)
+        self.assertEqual(res.calculation.operation, "average")
+        self.assertEqual(res.calculation.value, 130.25)
+        self.assertEqual(res.calculation.records_counted, 4)
+        self.assertEqual(
+            res.calculation.breakdown,
+            "(121 + 128 + 133 + 139) / 4 = 130.25",
+        )
+        self.assertIn("130.25", res.answer)
+        self.assertIn("Kila Road", res.answer)
+
+        # Ensure supporting records contain only Kila Road and never Sukhliya
+        self.assertEqual(len(res.records), 4)
+        for rec in res.records:
+            self.assertEqual(rec["satsang_ghar"], "Kila Road")
+            self.assertNotEqual(rec["satsang_ghar"], "Sukhliya")
+
+        counts = [r["attendance_count"] for r in res.records]
+        self.assertEqual(sorted(counts), [121, 128, 133, 139])
+
+    def test_api_kila_road_average_attendance(self):
+        """POST /api/v1/query returns average 130.25 and 4 records for Kila Road only."""
+        payload = {"question": "find the average attendance of kila road"}
+        response = self.client.post("/api/v1/query", json=payload)
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+
+        self.assertEqual(data["status"], "success")
+        self.assertFalse(data["clarification_required"])
+        self.assertEqual(data["total_records"], 4)
+        self.assertIsNotNone(data["calculation"])
+        self.assertEqual(data["calculation"]["value"], 130.25)
+        self.assertEqual(data["calculation"]["records_counted"], 4)
+        self.assertEqual(
+            data["calculation"]["breakdown"],
+            "(121 + 128 + 133 + 139) / 4 = 130.25",
+        )
+        self.assertIn("130.25", data["answer"])
+
+        # Supporting records must contain ONLY Kila Road
+        self.assertEqual(len(data["records"]), 4)
+        for rec in data["records"]:
+            self.assertEqual(rec["satsang_ghar"], "Kila Road")
+            self.assertNotEqual(rec["satsang_ghar"], "Sukhliya")
+
+

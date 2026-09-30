@@ -8,6 +8,13 @@ from app.schemas.search import (
     SourceReferenceInfo,
 )
 
+from app.schemas.reports import (
+    ReportCreateRequest,
+    ReportDetailResponse,
+    ReportItemResponse,
+    ReportListResponse,
+)
+
 __all__ = [
     "QueryRequest",
     "QueryPlan",
@@ -15,4 +22,8 @@ __all__ = [
     "SearchCalculation",
     "SourceReferenceInfo",
     "SearchResult",
+    "ReportCreateRequest",
+    "ReportItemResponse",
+    "ReportDetailResponse",
+    "ReportListResponse",
 ]

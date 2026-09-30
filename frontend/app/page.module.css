@@ -226,6 +226,45 @@
   border-color: var(--text-secondary);
 }
 
+.reportButton {
+  background-color: var(--bg-surface);
+  border: 1px solid var(--brand-maroon);
+  color: var(--brand-maroon);
+  font-weight: 500;
+  padding: 10px 22px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.15s ease;
+}
+
+.reportButton:hover {
+  background-color: var(--brand-maroon);
+  color: #ffffff;
+}
+
+.reviewWorkspaceBtn {
+  background-color: var(--bg-surface);
+  border: 1px solid #0f766e;
+  color: #0f766e;
+  font-weight: 500;
+  padding: 10px 20px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.15s ease;
+}
+
+.reviewWorkspaceBtn:hover {
+  background-color: #0f766e;
+  color: #ffffff;
+}
+
+
 /* Activity / Status Section */
 .activitySection {
   margin-top: 12px;

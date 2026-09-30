@@ -11,6 +11,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.core.dependencies import AuthenticatedUserContext, require_permission
 from app.database import get_db
 from app.schemas.search import SourceDetailResponse, SourcePreviewResponse
 from app.services.source_service import get_source_detail, get_source_preview
@@ -28,7 +29,8 @@ router = APIRouter(prefix="/api/v1/sources", tags=["Source Verification"])
 def get_source(
     source_id: str,
     db: Session = Depends(get_db),
-) -> SourceDetailResponse:
+    user: AuthenticatedUserContext = Depends(require_permission("read_sources")),
+):
     """Retrieve metadata for a specific source reference."""
     try:
         source_uuid = uuid.UUID(source_id)
@@ -59,7 +61,8 @@ def get_source(
 def preview_source(
     source_id: str,
     db: Session = Depends(get_db),
-) -> SourcePreviewResponse:
+    user: AuthenticatedUserContext = Depends(require_permission("read_sources")),
+):
     """Retrieve verified preview context for a specific source reference."""
     try:
         source_uuid = uuid.UUID(source_id)

@@ -38,6 +38,7 @@ from app.schemas.search import (
     SearchResult,
     SourceReferenceInfo,
 )
+from app.services.query_planner import QueryPlanner, get_query_planner
 
 
 class SearchContext:
@@ -66,11 +67,36 @@ class SearchService:
     """
     Core search engine that transforms a QueryPlan into safe ORM queries,
     performs calculations on retrieved records, and compiles provenance.
+    Depends strictly on the QueryPlanner interface, never on an AI provider directly.
     """
 
-    def __init__(self, db: Session, context: Optional[SearchContext] = None):
+    def __init__(
+        self,
+        db: Session,
+        context: Optional[SearchContext] = None,
+        planner: Optional[QueryPlanner] = None,
+    ):
         self.db = db
         self.context = context or SearchContext()
+        self.planner = planner or get_query_planner()
+        if hasattr(self.planner, "db") and getattr(self.planner, "db") is None:
+            self.planner.db = self.db
+        elif (
+            hasattr(self.planner, "local_planner")
+            and hasattr(self.planner.local_planner, "db")
+            and getattr(self.planner.local_planner, "db") is None
+        ):
+            self.planner.local_planner.db = self.db
+
+    def search(self, question: str) -> SearchResult:
+        """
+        Executes a query through the injected QueryPlanner interface:
+        1. Plans query via the injected QueryPlanner interface (Local or Optional AI).
+        2. Executes database ORM query and mathematical calculations on actual rows.
+        3. Compiles verified source references and returns SearchResult.
+        """
+        plan_result = self.planner.plan(question)
+        return self.execute_search(plan_result, question)
 
     def execute_search(
         self, plan_result: QueryPlanResult, original_question: str
@@ -645,13 +671,27 @@ class SearchService:
         self, plan: QueryPlan, original_question: str, interpreted_dict: Dict[str, Any]
     ) -> SearchResult:
         query = self.db.query(Report)
-        records = query.all()
+
+        # Filter by year or month if specified
+        if plan.year:
+            query = query.filter(
+                (extract("year", Report.reporting_period_start) == plan.year)
+                | (extract("year", Report.reporting_period_end) == plan.year)
+            )
+        if plan.month:
+            query = query.filter(
+                (extract("month", Report.reporting_period_start) == plan.month)
+                | (extract("month", Report.reporting_period_end) == plan.month)
+            )
+
+        records = query.order_by(Report.created_at.desc()).all()
         if not records:
+            period_suffix = f" for {self._format_period(plan)}" if (plan.month or plan.year) else ""
             return SearchResult(
                 original_question=original_question,
                 interpreted_query=interpreted_dict,
                 status="no_results",
-                answer="No registered reports found.",
+                answer=f"No registered office reports found{period_suffix}.",
                 records=[],
                 total_records=0,
                 calculation=None,
@@ -664,15 +704,22 @@ class SearchService:
                 "name": r.name,
                 "report_type": r.report_type,
                 "status": r.status,
+                "reporting_period": f"{r.reporting_period_start} to {r.reporting_period_end}" if r.reporting_period_start and r.reporting_period_end else "General",
+                "created_by": r.created_by or "System",
+                "created_at": r.created_at.isoformat() if r.created_at else "",
+                "download_url": f"/api/v1/reports/{r.id}/download?format=xlsx",
             }
             for r in records
         ]
+
+        report_titles = ", ".join([f"'{r.name}'" for r in records[:3]])
+        more_suffix = f" and {len(records) - 3} more" if len(records) > 3 else ""
 
         return SearchResult(
             original_question=original_question,
             interpreted_query=interpreted_dict,
             status="success",
-            answer=f"Found {len(records)} reports.",
+            answer=f"Found {len(records)} registered office report{'s' if len(records) > 1 else ''}: {report_titles}{more_suffix}.",
             records=serialized,
             total_records=len(records),
             calculation=None,

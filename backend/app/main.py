@@ -2,21 +2,38 @@
 RSSB Office Data Platform — FastAPI Application.
 """
 
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
-from app.database import engine
+from app.database import SessionLocal, engine
 
+from app.api.auth import router as auth_router
 from app.api.documents import router as documents_router
 from app.api.validation import router as validation_router
 from app.api.query import router as query_router
 from app.api.sources import router as sources_router
+from app.api.reports import router as reports_router
+from app.services.auth_service import seed_default_users
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application lifespan context for startup initialization."""
+    try:
+        with SessionLocal() as db:
+            seed_default_users(db)
+    except Exception:
+        pass
+    yield
+
 
 app = FastAPI(
     title="RSSB Office Data Platform",
     description="API for the RSSB Office Data Platform",
     version="0.1.0",
+    lifespan=lifespan,
 )
 
 # Enable CORS for local Next.js frontend
@@ -33,10 +50,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(auth_router)
 app.include_router(documents_router)
 app.include_router(validation_router)
 app.include_router(query_router)
 app.include_router(sources_router)
+app.include_router(reports_router, prefix="/api/v1/reports", tags=["Reports"])
 
 
 @app.get("/health")

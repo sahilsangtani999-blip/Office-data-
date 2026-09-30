@@ -10,9 +10,11 @@ Implements:
 
 from abc import ABC, abstractmethod
 from datetime import date, datetime
+import logging
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
+from app.config import settings
 from app.schemas.search import (
     NumericOperation,
     QueryPlan,
@@ -20,6 +22,8 @@ from app.schemas.search import (
     RecordType,
     SearchIntent,
 )
+
+logger = logging.getLogger(__name__)
 
 
 # =============================================================================
@@ -76,6 +80,7 @@ MONTH_MAP: Dict[str, int] = {
 KNOWN_SATSANG_GHARS: List[str] = [
     "Sukhliya",
     "Bicholi",
+    "Kila Road",
     "Pithampur",
     "Rau",
     "Model Town",
@@ -102,30 +107,128 @@ KNOWN_REPORT_TYPES: Dict[str, str] = {
 # Query Planner Interface
 # =============================================================================
 
-class BaseQueryPlanner(ABC):
+class QueryPlanner(ABC):
     """
-    Abstract interface for query planners.
-    Allows swapping between DeterministicQueryPlanner and future AIQueryPlanner.
+    Common abstract interface for query planners.
+    Implemented by LocalQueryPlanner (deterministic default) and OptionalAIQueryPlanner.
     """
 
     @abstractmethod
     def plan(self, question: str) -> QueryPlanResult:
         """
-        Parses a natural language question into a structured QueryPlan.
-        Returns a QueryPlanResult with the plan, ambiguity flags, or clarification questions.
+        Parses a natural language question into a structured QueryPlanResult.
         """
         pass
 
 
+BaseQueryPlanner = QueryPlanner
+
+
 # =============================================================================
-# Deterministic Query Planner Implementation
+# Deterministic Query Planner Implementation (Local Default)
 # =============================================================================
 
-class DeterministicQueryPlanner(BaseQueryPlanner):
+class DeterministicQueryPlanner(QueryPlanner):
     """
     Deterministic rule-based query parser and planner adhering strictly to
     controlled office vocabulary without using external AI APIs.
     """
+
+    def __init__(
+        self,
+        db: Optional[Any] = None,
+        known_ghars: Optional[List[str]] = None,
+    ):
+        self.db = db
+        self.custom_ghars = list(known_ghars) if known_ghars else []
+
+    def _get_known_ghars(self) -> List[str]:
+        """Returns all recognized Satsang Ghars from controlled vocabulary and database."""
+        ghars_set = set(KNOWN_SATSANG_GHARS)
+        ghars_set.update(self.custom_ghars)
+
+        if self.db:
+            try:
+                from app.models import SatsangGhar
+                db_records = self.db.query(SatsangGhar.name).filter(SatsangGhar.status != "inactive").all()
+                for r in db_records:
+                    if r[0]:
+                        ghars_set.add(r[0])
+            except Exception:
+                pass
+        else:
+            try:
+                from app.database import SessionLocal
+                from app.models import SatsangGhar
+                with SessionLocal() as session:
+                    db_records = session.query(SatsangGhar.name).filter(SatsangGhar.status != "inactive").all()
+                    for r in db_records:
+                        if r[0]:
+                            ghars_set.add(r[0])
+            except Exception:
+                pass
+
+        return sorted(list(ghars_set), key=len, reverse=True)
+
+    def _clean_ghar_candidate(self, candidate: str) -> Optional[str]:
+        """Cleans and validates a raw candidate substring for Satsang Ghar."""
+        if not candidate:
+            return None
+
+        cand = candidate.strip()
+        # Strip trailing date or period expressions (e.g., 'in september', 'on 2026-10-04')
+        cand = re.sub(
+            r"(?:\s+(?:in|on|during|for|from|to)\s+(?:\d{4}|\d{1,2}[-/]\d{1,2}[-/]\d{2,4}|[a-zA-Z]+))+$",
+            "",
+            cand,
+            flags=re.IGNORECASE,
+        )
+        # Strip trailing domain keywords
+        cand = re.sub(
+            r"(?:\s+(?:attendance|records?|sessions?|data|duty|duties|assignments?|report|satsang))+$",
+            "",
+            cand,
+            flags=re.IGNORECASE,
+        )
+        # Strip leading articles
+        cand = re.sub(r"^(?:the|a|an)\s+", "", cand.strip(), flags=re.IGNORECASE)
+        cand = cand.strip(" ?,.!\"'")
+
+        cand_lower = cand.lower()
+        if not cand or len(cand) < 2:
+            return None
+
+        # Exclude month names, standalone years
+        if cand_lower in MONTH_MAP or bool(re.match(r"^\d{4}$", cand_lower)):
+            return None
+        # Exclude roles
+        if cand_lower in ROLE_ALIASES or cand_lower in [k.lower() for k in ROLE_FULL_NAMES.values()]:
+            return None
+        # Exclude report types
+        if cand_lower in KNOWN_REPORT_TYPES or cand_lower in [k.lower() for k in KNOWN_REPORT_TYPES.values()]:
+            return None
+
+        disallowed_tokens = {
+            "what", "which", "where", "who", "when", "how", "why", "was", "is", "are", "were",
+            "average", "avg", "mean", "sum", "total", "count", "highest", "max", "maximum", "peak",
+            "lowest", "min", "minimum", "bottom", "top", "attendance", "assignment", "duty", "duties",
+            "record", "records", "report", "document", "office", "file", "data", "find", "show", "list",
+            "lookup", "all", "many", "session", "sessions", "attendee", "attendees",
+            "person", "persons", "speaker", "reader", "karta", "sewadar", "assigned", "schedule", "scheduled",
+        }
+        tokens = set(re.findall(r"\b[a-zA-Z]+\b", cand_lower))
+        if tokens.intersection(disallowed_tokens):
+            for known in self._get_known_ghars():
+                if cand_lower == known.lower():
+                    return known
+            return None
+
+        # If candidate matches any recognized ghar case-insensitively, return canonical form
+        for known in self._get_known_ghars():
+            if cand_lower == known.lower():
+                return known
+
+        return cand.title()
 
     def plan(self, question: str) -> QueryPlanResult:
         cleaned_question = question.strip()
@@ -139,14 +242,23 @@ class DeterministicQueryPlanner(BaseQueryPlanner):
 
         q_lower = cleaned_question.lower()
 
-        # 1. Ambiguity Pre-checks:
+        # 1. Extract Entities upfront
+        month, year = self._extract_month_and_year(q_lower)
+        parsed_date, date_start, date_end = self._extract_dates(q_lower)
+        satsang_ghar = self._extract_satsang_ghar(q_lower, cleaned_question)
+        role = self._extract_role(q_lower)
+        person = self._extract_person(q_lower, cleaned_question, role)
+        vehicle_type = self._extract_vehicle_type(q_lower)
+        source_requirement = self._extract_source_requirement(q_lower)
+
+        # 2. Ambiguity Pre-checks:
         # Check: "What was the highest attendance?" without period or location
         is_extreme = bool(re.search(r"\b(highest|maximum|max|peak|lowest|minimum|min)\b", q_lower))
-        has_period_or_ghar = any(
-            m in q_lower for m in MONTH_MAP.keys()
-        ) or any(
-            g.lower() in q_lower for g in KNOWN_SATSANG_GHARS
-        ) or bool(re.search(r"\b(202\d|in\s+\w+|for\s+\w+)\b", q_lower))
+        has_period_or_ghar = bool(
+            month or year or parsed_date or date_start or satsang_ghar or
+            any(m in q_lower for m in MONTH_MAP.keys()) or
+            re.search(r"\b(202\d|(?:in|for|at|of)\s+\w+)\b", q_lower)
+        )
 
         if is_extreme and "attendance" in q_lower and not has_period_or_ghar:
             return QueryPlanResult(
@@ -155,15 +267,6 @@ class DeterministicQueryPlanner(BaseQueryPlanner):
                 clarification_question="I found attendance data for multiple periods. Which period do you mean?",
                 warnings=["Query requests extreme value without specifying period or Satsang Ghar."],
             )
-
-        # 2. Extract Entities
-        month, year = self._extract_month_and_year(q_lower)
-        parsed_date, date_start, date_end = self._extract_dates(q_lower)
-        satsang_ghar = self._extract_satsang_ghar(q_lower, cleaned_question)
-        role = self._extract_role(q_lower)
-        person = self._extract_person(q_lower, cleaned_question, role)
-        vehicle_type = self._extract_vehicle_type(q_lower)
-        source_requirement = self._extract_source_requirement(q_lower)
 
         # 3. Determine Numeric Operation
         operation = self._extract_numeric_operation(q_lower)
@@ -198,6 +301,45 @@ class DeterministicQueryPlanner(BaseQueryPlanner):
                     warnings=["Broad assignment query."],
                 )
 
+        # Build structured filters dictionary
+        filters: Dict[str, Any] = {}
+        if satsang_ghar:
+            filters["satsang_ghar"] = {
+                "field": "satsang_ghar",
+                "operator": "equals",
+                "value": satsang_ghar,
+            }
+        if month:
+            filters["month"] = {
+                "field": "month",
+                "operator": "equals",
+                "value": month,
+            }
+        if year:
+            filters["year"] = {
+                "field": "year",
+                "operator": "equals",
+                "value": year,
+            }
+        if parsed_date:
+            filters["date"] = {
+                "field": "date",
+                "operator": "equals",
+                "value": parsed_date.isoformat(),
+            }
+        if role:
+            filters["role"] = {
+                "field": "role",
+                "operator": "equals",
+                "value": role,
+            }
+        if person:
+            filters["person"] = {
+                "field": "person",
+                "operator": "equals",
+                "value": person,
+            }
+
         plan = QueryPlan(
             raw_question=cleaned_question,
             intent=intent,
@@ -215,7 +357,7 @@ class DeterministicQueryPlanner(BaseQueryPlanner):
             requested_fields=[],
             source_requirement=source_requirement,
             comparison_target=comparison_target,
-            filters={},
+            filters=filters,
         )
 
         return QueryPlanResult(
@@ -299,20 +441,26 @@ class DeterministicQueryPlanner(BaseQueryPlanner):
 
     def _extract_satsang_ghar(self, q_lower: str, q_original: str) -> Optional[str]:
         """Extracts Satsang Ghar name from question using controlled vocabulary."""
-        # Check known ghars, longest first to match "Indore East" before "Indore"
-        sorted_ghars = sorted(KNOWN_SATSANG_GHARS, key=len, reverse=True)
-        for ghar in sorted_ghars:
+        known_ghars = self._get_known_ghars()
+        for ghar in known_ghars:
             if re.search(rf"\b{re.escape(ghar.lower())}\b", q_lower):
                 return ghar
 
-        # Look for pattern "at <Name>" or "for <Name>" before common terms
-        match = re.search(r"\b(?:at|for|in)\s+([A-Z][a-zA-Z0-9_\s]{2,20})(?:\s+(?:in|on|for|during|attendance|records|satsang))?", q_original)
-        if match:
-            candidate = match.group(1).strip()
-            # Exclude month names, roles, or common keywords
-            cand_lower = candidate.lower()
-            if cand_lower not in MONTH_MAP and cand_lower not in ["september", "october", "attendance", "assignment", "duty", "sk", "sr"]:
-                return candidate
+        # Prepositional & action patterns (case-insensitive)
+        patterns = [
+            r"\b(?:attendance|records?|sessions?|data)\s+(?:of|at|for|in|from)\s+([a-zA-Z0-9_\s]{2,40})",
+            r"\b(?:at|in)\s+([a-zA-Z0-9_\s]{2,40})",
+            r"\b(?:show|find|list|lookup|display)\s+attendance\s+(?:of|at|for|in|from)\s+([a-zA-Z0-9_\s]{2,40})",
+        ]
+        for pat in patterns:
+            for m in re.finditer(pat, q_original, flags=re.IGNORECASE):
+                cand = self._clean_ghar_candidate(m.group(1))
+                if cand:
+                    return cand
+
+        cand = self._clean_ghar_candidate(q_original)
+        if cand:
+            return cand
 
         return None
 
@@ -440,7 +588,7 @@ class DeterministicQueryPlanner(BaseQueryPlanner):
     ) -> Optional[Dict[str, Any]]:
         """Extracts comparison entities (e.g. between Sukhliya and Bicholi)."""
         # Find another ghar mentioned
-        for ghar in KNOWN_SATSANG_GHARS:
+        for ghar in self._get_known_ghars():
             if ghar != satsang_ghar and re.search(rf"\b{re.escape(ghar.lower())}\b", q_lower):
                 return {"satsang_ghar": ghar}
 
@@ -450,3 +598,336 @@ class DeterministicQueryPlanner(BaseQueryPlanner):
                 return {"month": m_num}
 
         return None
+
+
+# =============================================================================
+# Local Query Planner (Deterministic Default)
+# =============================================================================
+
+LocalQueryPlanner = DeterministicQueryPlanner
+
+
+# =============================================================================
+# AI Query Planner Provider Abstraction (Phase 2.4)
+# =============================================================================
+
+class AIQueryPlannerProvider(ABC):
+    """
+    Abstract interface for external or mock AI language-understanding providers.
+    
+    SAFETY CONSTRAINTS:
+    - Receives ONLY the user question, approved vocabulary, allowed intents, and target schema.
+    - NEVER receives raw database records, customer/sangat personal information, dumps, or filesystem paths.
+    - Returns ONLY a structured dictionary conforming to QueryPlan.
+    - Must NEVER return SQL, shell scripts, or executable code.
+    """
+
+    @abstractmethod
+    def plan_query(
+        self,
+        question: str,
+        vocabulary: Dict[str, Any],
+        allowed_intents: List[str],
+        plan_schema: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """
+        Processes user question with approved vocabulary and returns raw plan dict.
+        """
+        pass
+
+
+class MockAIQueryPlannerProvider(AIQueryPlannerProvider):
+    """
+    Deterministic mock AI provider for testing and offline development.
+    Guarantees reproducible, offline tests without external API dependencies.
+    """
+
+    def __init__(
+        self,
+        canned_response: Optional[Dict[str, Any]] = None,
+        should_fail: bool = False,
+        failure_exception: Optional[Exception] = None,
+    ):
+        self.canned_response = canned_response
+        self.should_fail = should_fail
+        self.failure_exception = failure_exception or RuntimeError("Simulated AI provider API timeout/error.")
+        self.last_received_payload: Optional[Dict[str, Any]] = None
+
+    def plan_query(
+        self,
+        question: str,
+        vocabulary: Dict[str, Any],
+        allowed_intents: List[str],
+        plan_schema: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        # Record what was provided to test data safety (verify no DB dumps or paths)
+        self.last_received_payload = {
+            "question": question,
+            "vocabulary_keys": list(vocabulary.keys()),
+            "allowed_intents": allowed_intents,
+        }
+
+        if self.should_fail:
+            raise self.failure_exception
+
+        if self.canned_response is not None:
+            return self.canned_response
+
+        # Default rule mapping for mock testing
+        q_lower = question.lower()
+        if "average attendance" in q_lower and "sukhliya" in q_lower:
+            return {
+                "raw_question": question,
+                "intent": "average",
+                "record_type": "attendance",
+                "numeric_operation": "average",
+                "calculation": "average",
+                "satsang_ghar": "Sukhliya",
+                "month": 9 if ("september" in q_lower or "sep" in q_lower) else None,
+                "source_required": False,
+            }
+        elif "count" in q_lower and "attendance" in q_lower:
+            return {
+                "raw_question": question,
+                "intent": "count",
+                "record_type": "attendance",
+                "numeric_operation": "count",
+                "calculation": "count",
+                "satsang_ghar": "Sukhliya" if "sukhliya" in q_lower else None,
+                "source_required": False,
+            }
+        elif "model town" in q_lower:
+            return {
+                "raw_question": question,
+                "intent": "list",
+                "record_type": "attendance",
+                "satsang_ghar": "Model Town",
+                "source_required": False,
+            }
+
+        return {
+            "raw_question": question,
+            "intent": "find",
+            "record_type": "attendance",
+        }
+
+
+class ExternalAIQueryPlannerProvider(AIQueryPlannerProvider):
+    """
+    External HTTP-based AI provider adapter (e.g. Gemini / generic LLM endpoint).
+    Only invoked when AI_PLANNER_ENABLED=true and a valid API key is present.
+    """
+
+    def __init__(
+        self,
+        api_key: Optional[str] = None,
+        model: Optional[str] = None,
+        timeout: float = 5.0,
+    ):
+        self.api_key = api_key or settings.AI_API_KEY
+        self.model = model or settings.AI_MODEL
+        self.timeout = timeout or settings.AI_TIMEOUT_SECONDS
+
+    def plan_query(
+        self,
+        question: str,
+        vocabulary: Dict[str, Any],
+        allowed_intents: List[str],
+        plan_schema: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        if not self.api_key:
+            raise ValueError("No AI API key configured for external provider.")
+
+        # Data safety: Prompt ONLY contains question, allowed intents, and controlled vocabulary
+        # Prompt NEVER contains database records, dumps, or filesystem paths.
+        import httpx
+
+        headers = {
+            "Content-Type": "application/json",
+            "x-api-key": self.api_key,
+        }
+        payload = {
+            "question": question,
+            "allowed_intents": allowed_intents,
+            "approved_vocabulary": vocabulary,
+        }
+
+        # Safe HTTP call with timeout
+        # If external API is unavailable or returns an error, exception is raised
+        # and OptionalAIQueryPlanner automatically and silently falls back to LocalQueryPlanner.
+        try:
+            with httpx.Client(timeout=self.timeout) as client:
+                resp = client.post(
+                    f"https://api.external-ai.example/v1/plan",
+                    headers=headers,
+                    json=payload,
+                )
+                resp.raise_for_status()
+                return resp.json()
+        except Exception as exc:
+            logger.warning(f"External AI query planner call failed: {exc}")
+            raise
+
+
+# =============================================================================
+# Optional AI Query Planner Adapter (Phase 2.4)
+# =============================================================================
+
+class OptionalAIQueryPlanner(QueryPlanner):
+    """
+    Optional AI-powered query planner adapter.
+    
+    Adheres strictly to the architectural constraints:
+    1. Operates without an external API key (disabled by default).
+    2. Strictly validates every AI output against the Pydantic QueryPlan schema.
+    3. Verifies vocabulary against approved office entities.
+    4. Automatically and silently falls back to LocalQueryPlanner if:
+       - AI_PLANNER_ENABLED is false
+       - API key is missing
+       - Provider raises any exception (timeout, network, quota, etc.)
+       - AI output fails schema validation
+       - AI attempts to inject SQL or invalid fields
+    5. Never allows AI to calculate numbers or generate SQL.
+    """
+
+    def __init__(
+        self,
+        local_planner: Optional[QueryPlanner] = None,
+        provider: Optional[AIQueryPlannerProvider] = None,
+        enabled: Optional[bool] = None,
+        api_key: Optional[str] = None,
+    ):
+        self.local_planner = local_planner or LocalQueryPlanner()
+        self.enabled = settings.AI_PLANNER_ENABLED if enabled is None else enabled
+        self.provider = provider
+        self.api_key = settings.AI_API_KEY if api_key is None else api_key
+
+    def plan(self, question: str) -> QueryPlanResult:
+        # 1. If AI is disabled or no provider configured: use local deterministic planner directly
+        if not self.enabled or self.provider is None:
+            return self.local_planner.plan(question)
+
+        # 2. If provider requires API key and none is provided: fall back to local planner
+        if isinstance(self.provider, ExternalAIQueryPlannerProvider) and not self.api_key:
+            return self.local_planner.plan(question)
+
+        # 3. Check for obvious ambiguity before calling provider
+        # If question is completely ambiguous (e.g. "What was the highest attendance?"),
+        # do not guess; rely on deterministic ambiguity detection
+        local_check = self.local_planner.plan(question)
+        if local_check.is_ambiguous:
+            return local_check
+
+        # 4. Prepare approved metadata (NEVER database records or credentials)
+        approved_vocabulary = {
+            "satsang_ghars": KNOWN_SATSANG_GHARS,
+            "roles": list(ROLE_FULL_NAMES.keys()),
+            "role_aliases": ROLE_ALIASES,
+            "months": MONTH_MAP,
+            "report_types": list(KNOWN_REPORT_TYPES.values()),
+        }
+        allowed_intents = [
+            "find", "list", "count", "sum", "average",
+            "filter", "compare", "lookup", "report", "source",
+        ]
+        plan_schema = QueryPlan.model_json_schema()
+
+        # 5. Call AI provider with strict fallback guard
+        try:
+            raw_output = self.provider.plan_query(
+                question=question,
+                vocabulary=approved_vocabulary,
+                allowed_intents=allowed_intents,
+                plan_schema=plan_schema,
+            )
+
+            if not isinstance(raw_output, dict):
+                logger.info("AI provider output is not a dictionary; falling back to local planner.")
+                return self.local_planner.plan(question)
+
+            # Ensure raw_question is populated
+            if "raw_question" not in raw_output or not raw_output["raw_question"]:
+                raw_output["raw_question"] = question
+
+            # 6. Strict Schema Validation (extra fields forbidden, SQL rejected)
+            validated_plan = QueryPlan.model_validate(raw_output)
+
+            # 7. Controlled Vocabulary & Ambiguity Verification
+            # If Satsang Ghar is specified, verify it is in approved vocabulary
+            if validated_plan.satsang_ghar:
+                matched_ghar = None
+                for known in KNOWN_SATSANG_GHARS:
+                    if validated_plan.satsang_ghar.lower() == known.lower():
+                        matched_ghar = known
+                        break
+                if not matched_ghar:
+                    # Unsupported vocabulary returned by AI! Do not guess.
+                    # Return safe clarification or fall back safely
+                    return QueryPlanResult(
+                        plan=None,
+                        is_ambiguous=True,
+                        clarification_question=f"I could not verify the location '{validated_plan.satsang_ghar}'. Please specify a recognized Satsang Ghar.",
+                        warnings=[f"AI suggested unrecognized Satsang Ghar '{validated_plan.satsang_ghar}'."],
+                    )
+                validated_plan.satsang_ghar = matched_ghar
+
+            # If person name is ambiguous (multiple matches in DB), handled by search service
+
+            return QueryPlanResult(
+                plan=validated_plan,
+                is_ambiguous=False,
+                clarification_question=None,
+                warnings=[],
+            )
+
+        except Exception as e:
+            # Fallback on ANY error (ValidationError, connection failure, timeout, etc.)
+            # The user NEVER sees raw AI errors.
+            logger.info(f"AI planning failed ({type(e).__name__}: {e}); falling back to local planner.")
+            fallback_res = self.local_planner.plan(question)
+            fallback_res.warnings.append(f"AI planning bypassed ({type(e).__name__}); local planner used.")
+            return fallback_res
+
+
+# =============================================================================
+# Factory Functions
+# =============================================================================
+
+def get_ai_provider() -> Optional[AIQueryPlannerProvider]:
+    """Resolves the configured AI provider instance, or None if disabled."""
+    if not settings.AI_PLANNER_ENABLED:
+        return None
+
+    if settings.AI_PROVIDER == "mock":
+        return MockAIQueryPlannerProvider()
+    elif settings.AI_PROVIDER in ("gemini", "external", "openai"):
+        return ExternalAIQueryPlannerProvider(
+            api_key=settings.AI_API_KEY,
+            model=settings.AI_MODEL,
+            timeout=settings.AI_TIMEOUT_SECONDS,
+        )
+    return None
+
+
+def get_query_planner(
+    enabled: Optional[bool] = None,
+    provider: Optional[AIQueryPlannerProvider] = None,
+) -> QueryPlanner:
+    """
+    Factory function returning the active QueryPlanner.
+    Defaults to LocalQueryPlanner when AI_PLANNER_ENABLED=false.
+    """
+    is_enabled = settings.AI_PLANNER_ENABLED if enabled is None else enabled
+    if not is_enabled:
+        return LocalQueryPlanner()
+
+    resolved_provider = provider or get_ai_provider()
+    if resolved_provider is None:
+        # Fall back directly to local planner if no provider can be created
+        return LocalQueryPlanner()
+
+    return OptionalAIQueryPlanner(
+        local_planner=LocalQueryPlanner(),
+        provider=resolved_provider,
+        enabled=True,
+    )

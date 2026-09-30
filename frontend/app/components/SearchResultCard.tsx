@@ -270,54 +270,129 @@ export default function SearchResultCard({ result, onSelectSuggestion, onViewSou
             <table className={styles.recordsTable}>
               <thead>
                 <tr>
-                  <th>Date</th>
-                  <th>Satsang Ghar</th>
-                  {records.some((r) => r.attendance_count !== undefined) && <th>Value / Count</th>}
-                  {records.some((r) => r.person) && <th>Person</th>}
-                  {records.some((r) => r.role_code || r.role_name) && <th>Role</th>}
-                  {records.some((r) => r.vehicle_type) && <th>Vehicle Type</th>}
-                  <th>Status</th>
-                  <th>Source Action</th>
+                  {records.some((r) => r.report_type) ? (
+                    <>
+                      <th>Report Name</th>
+                      <th>Type</th>
+                      <th>Period</th>
+                      <th>Created By</th>
+                      <th>Status</th>
+                      <th>Export Downloads</th>
+                    </>
+                  ) : (
+                    <>
+                      <th>Date</th>
+                      <th>Satsang Ghar</th>
+                      {records.some((r) => r.attendance_count !== undefined) && <th>Value / Count</th>}
+                      {records.some((r) => r.person) && <th>Person</th>}
+                      {records.some((r) => r.role_code || r.role_name) && <th>Role</th>}
+                      {records.some((r) => r.vehicle_type) && <th>Vehicle Type</th>}
+                      <th>Status</th>
+                      <th>Source Action</th>
+                    </>
+                  )}
                 </tr>
               </thead>
               <tbody>
                 {records.map((r, i) => (
                   <tr key={r.id || i}>
-                    <td>{r.date || "—"}</td>
-                    <td>{r.satsang_ghar || "—"}</td>
-                    {records.some((rec) => rec.attendance_count !== undefined) && (
-                      <td><strong>{r.attendance_count ?? "—"}</strong></td>
+                    {r.report_type ? (
+                      <>
+                        <td><strong>{r.name}</strong></td>
+                        <td>
+                          <span style={{ fontSize: "0.8rem", color: "var(--brand-maroon)", fontWeight: 600 }}>
+                            {r.report_type}
+                          </span>
+                        </td>
+                        <td style={{ fontSize: "0.82rem" }}>
+                          {r.reporting_period_start || "All"} to {r.reporting_period_end || "All"}
+                        </td>
+                        <td style={{ fontSize: "0.82rem" }}>{r.created_by || "—"}</td>
+                        <td>
+                          <span style={{ color: "#16a34a", fontSize: "0.75rem", fontWeight: 600 }}>
+                            {r.status || "completed"}
+                          </span>
+                        </td>
+                        <td>
+                          <div style={{ display: "flex", gap: "6px" }}>
+                            {r.export_xlsx_url && (
+                              <a
+                                href={r.export_xlsx_url}
+                                target="_blank"
+                                rel="noreferrer"
+                                style={{
+                                  fontSize: "0.78rem",
+                                  padding: "2px 8px",
+                                  border: "1px solid var(--brand-maroon)",
+                                  borderRadius: "3px",
+                                  color: "var(--brand-maroon)",
+                                  textDecoration: "none",
+                                  fontWeight: 500,
+                                }}
+                              >
+                                XLSX
+                              </a>
+                            )}
+                            {r.export_csv_url && (
+                              <a
+                                href={r.export_csv_url}
+                                target="_blank"
+                                rel="noreferrer"
+                                style={{
+                                  fontSize: "0.78rem",
+                                  padding: "2px 8px",
+                                  border: "1px solid var(--border-color)",
+                                  borderRadius: "3px",
+                                  color: "var(--text-primary)",
+                                  textDecoration: "none",
+                                  fontWeight: 500,
+                                }}
+                              >
+                                CSV
+                              </a>
+                            )}
+                          </div>
+                        </td>
+                      </>
+                    ) : (
+                      <>
+                        <td>{r.date || "—"}</td>
+                        <td>{r.satsang_ghar || "—"}</td>
+                        {records.some((rec) => rec.attendance_count !== undefined) && (
+                          <td><strong>{r.attendance_count ?? "—"}</strong></td>
+                        )}
+                        {records.some((rec) => rec.person) && <td>{r.person || "—"}</td>}
+                        {records.some((rec) => rec.role_code || rec.role_name) && (
+                          <td>{r.role_code ? `${r.role_name} (${r.role_code})` : r.role_name || "—"}</td>
+                        )}
+                        {records.some((rec) => rec.vehicle_type) && <td>{r.vehicle_type || "—"}</td>}
+                        <td>
+                          {r.status === "needs_review" ? (
+                            <span className={styles.badgePillReview}>Needs Review</span>
+                          ) : (
+                            <span style={{ color: "#16a34a", fontSize: "0.75rem", fontWeight: 600 }}>Verified</span>
+                          )}
+                        </td>
+                        <td>
+                          {r.source_reference_id && onViewSource ? (
+                            <button
+                              type="button"
+                              className={styles.viewSourceBtnSmall}
+                              onClick={() => onViewSource(r.source_reference_id)}
+                            >
+                              View Source
+                            </button>
+                          ) : r.source_reference ? (
+                            <span>
+                              {r.source_reference.sheet_name || "Sheet"}
+                              {r.source_reference.row_number ? ` : Row ${r.source_reference.row_number}` : ""}
+                            </span>
+                          ) : (
+                            "—"
+                          )}
+                        </td>
+                      </>
                     )}
-                    {records.some((rec) => rec.person) && <td>{r.person || "—"}</td>}
-                    {records.some((rec) => rec.role_code || rec.role_name) && (
-                      <td>{r.role_code ? `${r.role_name} (${r.role_code})` : r.role_name || "—"}</td>
-                    )}
-                    {records.some((rec) => rec.vehicle_type) && <td>{r.vehicle_type || "—"}</td>}
-                    <td>
-                      {r.status === "needs_review" ? (
-                        <span className={styles.badgePillReview}>Needs Review</span>
-                      ) : (
-                        <span style={{ color: "#16a34a", fontSize: "0.75rem", fontWeight: 600 }}>Verified</span>
-                      )}
-                    </td>
-                    <td>
-                      {r.source_reference_id && onViewSource ? (
-                        <button
-                          type="button"
-                          className={styles.viewSourceBtnSmall}
-                          onClick={() => onViewSource(r.source_reference_id)}
-                        >
-                          View Source
-                        </button>
-                      ) : r.source_reference ? (
-                        <span>
-                          {r.source_reference.sheet_name || "Sheet"}
-                          {r.source_reference.row_number ? ` : Row ${r.source_reference.row_number}` : ""}
-                        </span>
-                      ) : (
-                        "—"
-                      )}
-                    </td>
                   </tr>
                 ))}
               </tbody>

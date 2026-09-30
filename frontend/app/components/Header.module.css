@@ -34,6 +34,40 @@
   letter-spacing: -0.01em;
 }
 
+.rightGroup {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.roleSelector {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.roleLabel {
+  font-weight: 500;
+}
+
+.roleSelect {
+  font-size: 0.8rem;
+  font-weight: 500;
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  background-color: var(--bg-primary);
+  color: var(--text-main);
+  cursor: pointer;
+  outline: none;
+}
+
+.roleSelect:focus {
+  border-color: var(--brand-maroon);
+}
+
 .badge {
   font-size: 0.8rem;
   font-weight: 500;
@@ -42,4 +76,46 @@
   border: 1px solid var(--border-color);
   padding: 4px 10px;
   border-radius: 12px;
+}
+
+.userInfo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.userBadge {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background-color: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  padding: 4px 10px;
+  border-radius: 12px;
+}
+
+.roleTag {
+  font-weight: 600;
+  color: var(--brand-maroon);
+  text-transform: uppercase;
+  font-size: 0.72rem;
+  margin-left: 4px;
+}
+
+.logoutBtn {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  background: none;
+  border: 1px solid var(--border-color);
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.logoutBtn:hover {
+  color: var(--brand-maroon);
+  border-color: var(--brand-maroon);
+  background-color: var(--brand-maroon-light);
 }

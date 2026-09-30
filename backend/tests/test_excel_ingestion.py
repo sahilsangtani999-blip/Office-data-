@@ -298,6 +298,40 @@ class TestDocumentUploadAPI(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("Unsupported file format", response.json()["detail"])
 
+    def test_upload_complex_dummy_test_pack(self):
+        """Test uploading RSSB_Data_Search_Dummy_Test_Data.xlsx with titled headers."""
+        file_path = FIXTURES_DIR / "RSSB_Data_Search_Dummy_Test_Data.xlsx"
+        if not file_path.is_file():
+            self.skipTest("Dummy test workbook fixture not found")
+
+        # 1. First upload -> 200 OK and all records accepted
+        with open(file_path, "rb") as f:
+            response = self.client.post(
+                "/api/v1/documents/upload",
+                files={"file": ("RSSB_Data_Search_Dummy_Test_Data.xlsx", f, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+                data={"data_source_name": "Test Excel Upload"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["duplicate_status"], "new")
+        self.assertEqual(data["records_accepted"], 240)
+        self.assertEqual(data["records_processed"], 240)
+
+        # 2. Second upload -> duplicate detection
+        with open(file_path, "rb") as f:
+            response2 = self.client.post(
+                "/api/v1/documents/upload",
+                files={"file": ("RSSB_Data_Search_Dummy_Test_Data.xlsx", f, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+                data={"data_source_name": "Test Excel Upload"},
+            )
+
+        self.assertEqual(response2.status_code, 200)
+        data2 = response2.json()
+        self.assertEqual(data2["duplicate_status"], "duplicate")
+        self.assertEqual(data2["version_id"], data["version_id"])
+
 
 if __name__ == "__main__":
     unittest.main()
+

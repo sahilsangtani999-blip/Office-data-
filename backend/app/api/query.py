@@ -10,25 +10,24 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.core.dependencies import AuthenticatedUserContext, get_current_user
 from app.database import get_db
 from app.schemas.search import QueryRequest, SearchResult
-from app.services.query_planner import DeterministicQueryPlanner
+from app.services.query_planner import QueryPlanner, get_query_planner
 from app.services.search_service import SearchContext, SearchService
 
 router = APIRouter(prefix="/api/v1", tags=["Search & Query Engine"])
 
 
 def get_search_context(
-    x_user_id: Optional[str] = Header(default="dev-user"),
-    x_user_role: Optional[str] = Header(default="user"),
-    x_authorized: Optional[str] = Header(default="true"),
+    user: AuthenticatedUserContext = Depends(get_current_user),
 ) -> SearchContext:
-    """Dependency preparing for future authorization headers."""
-    is_auth = str(x_authorized).lower() in ("true", "1", "yes")
+    """Dependency resolving SearchContext from the authenticated user and checking read permissions."""
+    is_authorized = user.is_authenticated and user.has_permission("read")
     return SearchContext(
-        user_id=x_user_id or "dev-user",
-        roles=[x_user_role or "user"],
-        is_authorized=is_auth,
+        user_id=user.username or user.user_id,
+        roles=user.roles,
+        is_authorized=is_authorized,
     )
 
 
@@ -37,7 +36,7 @@ def get_search_context(
     response_model=SearchResult,
     status_code=status.HTTP_200_OK,
     summary="Natural Language Search Query",
-    description="Processes a natural language query through deterministic parsing, queries PostgreSQL, and returns structured calculations, records, and provenance.",
+    description="Processes a natural language query through deterministic parsing or optional AI planner, queries PostgreSQL, and returns structured calculations, records, and provenance.",
 )
 def process_query(
     payload: QueryRequest,
@@ -46,7 +45,7 @@ def process_query(
 ) -> SearchResult:
     """
     Query execution endpoint:
-    1. Deterministic query planner creates a structured QueryPlan.
+    1. QueryPlanner interface (Local or Optional AI) creates a structured QueryPlan.
     2. Search service verifies permissions and runs parameterized ORM retrieval.
     3. Numerical calculations are performed on actual DB values.
     4. Granular source references and machine-readable result returned.
@@ -65,10 +64,6 @@ def process_query(
             detail=str(pe),
         )
 
-    planner = DeterministicQueryPlanner()
-    plan_result = planner.plan(payload.question)
-
-    search_service = SearchService(db=db, context=context)
-    result = search_service.execute_search(plan_result, payload.question)
-
-    return result
+    planner: QueryPlanner = get_query_planner()
+    search_service = SearchService(db=db, context=context, planner=planner)
+    return search_service.search(payload.question)

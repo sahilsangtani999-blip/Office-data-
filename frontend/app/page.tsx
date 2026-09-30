@@ -1,30 +1,48 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import Header from "./components/Header";
+import LoginScreen from "./components/LoginScreen";
+import ReportsModal from "./components/ReportsModal";
+import ReviewWorkspaceModal from "./components/ReviewWorkspaceModal";
 import SearchResultCard from "./components/SearchResultCard";
 import SourcePreviewModal from "./components/SourcePreviewModal";
 import UploadModal from "./components/UploadModal";
 import UploadResultCard from "./components/UploadResultCard";
-import { IngestionResponse, SearchResult } from "./types";
+import { fetchCurrentUser, getAuthHeaders, getStoredUser } from "./auth";
+import { AuthUser, IngestionResponse, SearchResult } from "./types";
 import styles from "./page.module.css";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
-const SAMPLE_QUERIES = [
-  "What was the average attendance at Sukhliya in September?",
-  "Show attendance for Sukhliya in September",
-  "Show attendance for Model Town",
-  "What was the total attendance for Sukhliya in September?",
-  "Find assignment at Sukhliya on 2026-09-06",
-  "Lookup VIDEO CD",
-  "What was the highest attendance?",
-];
-
 export default function Home() {
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
+  const [authChecking, setAuthChecking] = useState<boolean>(true);
+
   const [modalOpen, setModalOpen] = useState(false);
   const [modalFormat, setModalFormat] = useState<"excel" | "pdf" | "all">("all");
+  const [reportsModalOpen, setReportsModalOpen] = useState(false);
+  const [reviewWorkspaceOpen, setReviewWorkspaceOpen] = useState(false);
   const [uploadHistory, setUploadHistory] = useState<IngestionResponse[]>([]);
+
+  useEffect(() => {
+    // Check initial cached session
+    const cached = getStoredUser();
+    if (cached) {
+      setCurrentUser(cached);
+    }
+    // Verify session validity with backend
+    fetchCurrentUser()
+      .then((user) => {
+        setCurrentUser(user);
+      })
+      .catch(() => {
+        setCurrentUser(null);
+      })
+      .finally(() => {
+        setAuthChecking(false);
+      });
+  }, []);
 
   // Search states
   const [searchQuery, setSearchQuery] = useState("");
@@ -55,6 +73,7 @@ export default function Home() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          ...getAuthHeaders(),
         },
         body: JSON.stringify({ question: trimmed }),
       });
@@ -78,20 +97,34 @@ export default function Home() {
     executeSearch(searchQuery);
   };
 
-  const handleSelectSample = (sample: string) => {
-    setSearchQuery(sample);
-    executeSearch(sample);
-  };
-
   const handleClearSearch = () => {
     setSearchQuery("");
     setSearchResult(null);
     setSearchError(null);
   };
 
+  if (authChecking) {
+    return (
+      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: "var(--bg-primary)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ width: 10, height: 10, borderRadius: "50%", backgroundColor: "var(--brand-maroon)", display: "inline-block" }} />
+          <span style={{ color: "var(--brand-maroon)", fontWeight: 600 }}>Loading RSSB Office Platform...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (!currentUser) {
+    return <LoginScreen onLoginSuccess={(u) => setCurrentUser(u)} />;
+  }
+
   return (
     <div className={styles.page}>
-      <Header />
+      <Header
+        user={currentUser}
+        onLogout={() => setCurrentUser(null)}
+        onUserChange={(u) => setCurrentUser(u)}
+      />
 
       <main className={styles.main}>
         <div className={styles.contentContainer}>
@@ -150,22 +183,6 @@ export default function Home() {
                     </button>
                   </div>
                 </div>
-
-                {/* Example Query Chips */}
-                <div className={styles.chipsContainer}>
-                  <span className={styles.chipsLabel}>Examples:</span>
-                  {SAMPLE_QUERIES.map((sample, idx) => (
-                    <button
-                      key={idx}
-                      type="button"
-                      className={styles.chip}
-                      onClick={() => handleSelectSample(sample)}
-                      disabled={searchLoading}
-                    >
-                      {sample}
-                    </button>
-                  ))}
-                </div>
               </form>
             </div>
 
@@ -190,7 +207,10 @@ export default function Home() {
             {searchResult && (
               <SearchResultCard
                 result={searchResult}
-                onSelectSuggestion={(q) => handleSelectSample(q)}
+                onSelectSuggestion={(q) => {
+                  setSearchQuery(q);
+                  executeSearch(q);
+                }}
                 onViewSource={(sourceId) => setSelectedSourceId(sourceId)}
               />
             )}
@@ -219,6 +239,31 @@ export default function Home() {
                 onClick={() => handleOpenUpload("pdf")}
               >
                 Upload PDF
+              </button>
+              <button
+                type="button"
+                className={styles.reportButton}
+                onClick={() => setReportsModalOpen(true)}
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                  <polyline points="14 2 14 8 20 8" />
+                  <line x1="16" y1="13" x2="8" y2="13" />
+                  <line x1="16" y1="17" x2="8" y2="17" />
+                  <polyline points="10 9 9 9 8 9" />
+                </svg>
+                Office Reports & Exports
+              </button>
+              <button
+                type="button"
+                className={styles.reviewWorkspaceBtn}
+                onClick={() => setReviewWorkspaceOpen(true)}
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M9 11l3 3L22 4" />
+                  <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+                </svg>
+                Document Review & Validation
               </button>
             </div>
           </section>
@@ -259,6 +304,20 @@ export default function Home() {
         acceptedFormat={modalFormat}
       />
 
+      {/* Office Reports & Data Export Modal */}
+      <ReportsModal
+        isOpen={reportsModalOpen}
+        onClose={() => setReportsModalOpen(false)}
+        user={currentUser}
+      />
+
+      {/* Document Review & Validation Workspace Modal */}
+      <ReviewWorkspaceModal
+        isOpen={reviewWorkspaceOpen}
+        onClose={() => setReviewWorkspaceOpen(false)}
+        user={currentUser}
+      />
+
       {/* Source Verification Preview Modal */}
       {selectedSourceId && (
         <SourcePreviewModal
@@ -269,3 +328,4 @@ export default function Home() {
     </div>
   );
 }
+

@@ -16,12 +16,17 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from app.core.dependencies import AuthenticatedUserContext, get_current_user, require_permission
 from app.database import get_db
+from app.models import Document
 from app.services.validation_service import (
     ReviewerContext,
     ValidationIssue,
     ValidationResult,
     approve_document,
+    enrich_issue,
+    get_document_records,
+    get_review_history,
     get_validation_result,
     list_validation_issues,
     mark_needs_correction,
@@ -47,10 +52,15 @@ class ValidationIssueSchema(BaseModel):
     sheet_name: Optional[str] = None
     row_number: Optional[int] = None
     cell_or_range: Optional[str] = None
+    raw_value: Optional[str] = None
+    extracted_value: Optional[Dict[str, Any]] = None
+    record_details: Optional[Dict[str, Any]] = None
+    document_name: Optional[str] = None
 
 
 class ValidationResultSchema(BaseModel):
     document_id: str
+    document_name: Optional[str] = None
     version_id: Optional[str] = None
     validation_status: str
     total_records_examined: int
@@ -61,6 +71,7 @@ class ValidationResultSchema(BaseModel):
     errors_count: int
     validation_timestamp: str
     issues: List[ValidationIssueSchema]
+    review_history: Optional[List[Dict[str, Any]]] = None
 
 
 class ApprovalRequestSchema(BaseModel):
@@ -90,20 +101,18 @@ class ReviewActionResponseSchema(BaseModel):
 # =============================================================================
 
 def get_current_reviewer(
-    x_user_id: Optional[str] = Header(default="dev-test-user"),
-    x_user_name: Optional[str] = Header(default="Developer / Test Reviewer"),
-    x_authorized: Optional[str] = Header(default="true"),
+    user: AuthenticatedUserContext = Depends(get_current_user),
 ) -> ReviewerContext:
     """
-    Dependency preparing for future RBAC / JWT authorization.
-    In dev/test, uses header overrides or defaults to authorized reviewer.
+    Dependency that resolves the reviewer context from the authenticated user (JWT)
+    or header overrides. Verifies whether the caller is authorized to perform review actions.
     """
-    is_auth = str(x_authorized).lower() in ("true", "1", "yes")
+    is_authorized = user.is_authenticated and user.has_permission("review")
     return ReviewerContext(
-        user_id=x_user_id or "dev-test-user",
-        username=x_user_name or "Developer / Test Reviewer",
-        roles=["reviewer", "admin"],
-        is_authorized=is_auth,
+        user_id=user.user_id,
+        username=user.username,
+        roles=user.roles,
+        is_authorized=is_authorized,
     )
 
 
@@ -120,6 +129,7 @@ def trigger_validation(
     document_id: str,
     version_id: Optional[str] = Query(default=None),
     db: Session = Depends(get_db),
+    user: AuthenticatedUserContext = Depends(require_permission("review")),
 ):
     """Run comprehensive validation checks on a document and persist the results."""
     try:
@@ -149,6 +159,7 @@ def fetch_validation(
     document_id: str,
     version_id: Optional[str] = Query(default=None),
     db: Session = Depends(get_db),
+    user: AuthenticatedUserContext = Depends(require_permission("read")),
 ):
     """Retrieve the latest validation result report for a document."""
     try:
@@ -161,8 +172,14 @@ def fetch_validation(
         )
 
     try:
+        doc = db.query(Document).filter(Document.id == doc_uuid).first()
+        doc_name = doc.original_filename if doc else None
         result = get_validation_result(db, doc_uuid, version_id=ver_uuid)
-        return result.to_dict()
+        res_dict = result.to_dict()
+        res_dict["document_name"] = doc_name
+        res_dict["issues"] = [enrich_issue(db, i, doc_name=doc_name) for i in result.issues]
+        res_dict["review_history"] = get_review_history(db, doc_uuid)
+        return res_dict
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     except Exception as e:
@@ -179,6 +196,7 @@ def fetch_issues(
     severity: Optional[str] = Query(default=None, description="Filter by INFO, WARNING, or ERROR"),
     version_id: Optional[str] = Query(default=None),
     db: Session = Depends(get_db),
+    user: AuthenticatedUserContext = Depends(require_permission("read")),
 ):
     """List validation issues detected on a document, optionally filtered by severity."""
     try:
@@ -191,8 +209,57 @@ def fetch_issues(
         )
 
     try:
+        doc = db.query(Document).filter(Document.id == doc_uuid).first()
+        doc_name = doc.original_filename if doc else None
         issues = list_validation_issues(db, doc_uuid, version_id=ver_uuid, severity=severity)
-        return [i.to_dict() for i in issues]
+        return [enrich_issue(db, i, doc_name=doc_name) for i in issues]
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
+@router.get(
+    "/{document_id}/history",
+    response_model=List[Dict[str, Any]],
+    summary="Get document review history",
+)
+def fetch_review_history(
+    document_id: str,
+    db: Session = Depends(get_db),
+    user: AuthenticatedUserContext = Depends(require_permission("read")),
+):
+    """Retrieve the full review audit trail for a document."""
+    try:
+        doc_uuid = uuid.UUID(document_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid UUID format for document_id.",
+        )
+    return get_review_history(db, doc_uuid)
+
+
+@router.get(
+    "/{document_id}/records",
+    response_model=List[Dict[str, Any]],
+    summary="Get extracted entity records for a document",
+)
+def fetch_document_records(
+    document_id: str,
+    db: Session = Depends(get_db),
+    user: AuthenticatedUserContext = Depends(require_permission("read")),
+):
+    """Retrieve all structured entity records (Attendance, Assignment, Vehicle) linked to this document."""
+    try:
+        doc_uuid = uuid.UUID(document_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid UUID format for document_id.",
+        )
+    try:
+        return get_document_records(db, doc_uuid)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     except Exception as e:

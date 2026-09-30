@@ -1,0 +1,430 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(34, 34, 34, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 16px;
+}
+
+.modal {
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  width: 100%;
+  max-width: 760px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
+  overflow: hidden;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.titleArea {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.subtitle {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.closeButton {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  line-height: 1;
+}
+
+.closeButton:hover {
+  color: var(--text-primary);
+  background-color: var(--bg-primary);
+}
+
+.tabBar {
+  display: flex;
+  border-bottom: 1px solid var(--border-color);
+  background-color: var(--bg-primary);
+  padding: 0 24px;
+  gap: 8px;
+}
+
+.tabButton {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 12px 16px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.tabButton:hover {
+  color: var(--text-primary);
+}
+
+.tabButtonActive {
+  color: var(--brand-maroon);
+  border-bottom-color: var(--brand-maroon);
+  font-weight: 600;
+}
+
+.tabBadge {
+  background-color: var(--border-color);
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  padding: 2px 6px;
+  border-radius: 10px;
+  margin-left: 6px;
+}
+
+.body {
+  padding: 24px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+/* Permission warning */
+.permissionNotice {
+  background-color: #fff9e6;
+  border: 1px solid #ffe299;
+  border-radius: 6px;
+  padding: 14px 18px;
+  margin-bottom: 20px;
+  color: #7a5400;
+  font-size: 0.88rem;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.noticeIcon {
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+/* Form Styles */
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.formGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+@media (max-width: 600px) {
+  .formGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.formGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.helperText {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.select,
+.input {
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 9px 12px;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.select:focus,
+.input:focus {
+  border-color: var(--brand-maroon);
+}
+
+.checkboxGroup {
+  display: flex;
+  gap: 20px;
+  align-items: center;
+  margin-top: 4px;
+}
+
+.checkboxLabel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.88rem;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+/* Success Result Box */
+.successCard {
+  background-color: #f7faf7;
+  border: 1px solid #c9e5c9;
+  border-radius: 6px;
+  padding: 20px;
+  margin-top: 24px;
+}
+
+.successHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.successTitle {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #1f5f24;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.kpiGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.kpiCard {
+  background-color: #ffffff;
+  border: 1px solid #d9ebd9;
+  border-radius: 4px;
+  padding: 10px 14px;
+  text-align: center;
+}
+
+.kpiValue {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--brand-maroon);
+}
+
+.kpiLabel {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-top: 2px;
+}
+
+.exportButtons {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+}
+
+.downloadXlsxBtn {
+  background-color: var(--brand-maroon);
+  color: #ffffff;
+  border: 1px solid var(--brand-maroon);
+  padding: 8px 16px;
+  border-radius: 4px;
+  font-size: 0.88rem;
+  font-weight: 500;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  text-decoration: none;
+}
+
+.downloadXlsxBtn:hover {
+  background-color: var(--brand-maroon-hover);
+}
+
+.downloadCsvBtn {
+  background-color: var(--bg-surface);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  padding: 8px 16px;
+  border-radius: 4px;
+  font-size: 0.88rem;
+  font-weight: 500;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  text-decoration: none;
+}
+
+.downloadCsvBtn:hover {
+  background-color: var(--bg-primary);
+}
+
+/* Archive List Table */
+.archiveTableWrapper {
+  overflow-x: auto;
+}
+
+.archiveTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+
+.archiveTable th {
+  background-color: var(--bg-primary);
+  color: var(--text-secondary);
+  font-weight: 600;
+  text-align: left;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.archiveTable td {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-primary);
+  vertical-align: middle;
+}
+
+.archiveRow:hover {
+  background-color: #faf9f6;
+}
+
+.badgeType {
+  background-color: #f0e6e6;
+  color: var(--brand-maroon);
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 4px;
+  display: inline-block;
+}
+
+.badgeStatus {
+  background-color: #e6f4ea;
+  color: #137333;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 4px;
+  display: inline-block;
+}
+
+.actionLinks {
+  display: flex;
+  gap: 8px;
+}
+
+.tableLink {
+  color: var(--brand-maroon);
+  font-weight: 500;
+  font-size: 0.82rem;
+  text-decoration: none;
+  border: 1px solid var(--border-color);
+  padding: 3px 8px;
+  border-radius: 4px;
+  transition: all 0.15s ease;
+}
+
+.tableLink:hover {
+  background-color: var(--brand-maroon);
+  color: #ffffff;
+  border-color: var(--brand-maroon);
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 16px 24px;
+  border-top: 1px solid var(--border-color);
+  background-color: var(--bg-surface);
+  gap: 12px;
+}
+
+.cancelBtn {
+  background: none;
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  padding: 8px 16px;
+  border-radius: 4px;
+  font-size: 0.88rem;
+  cursor: pointer;
+}
+
+.cancelBtn:hover {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+.generateBtn {
+  background-color: var(--brand-maroon);
+  border: 1px solid var(--brand-maroon);
+  color: #ffffff;
+  font-weight: 500;
+  padding: 8px 22px;
+  border-radius: 4px;
+  font-size: 0.88rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.generateBtn:hover:not(:disabled) {
+  background-color: var(--brand-maroon-hover);
+}
+
+.generateBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.errorBanner {
+  background-color: var(--status-error-bg);
+  border: 1px solid rgba(148, 27, 27, 0.2);
+  color: var(--status-error-text);
+  padding: 10px 14px;
+  border-radius: 4px;
+  font-size: 0.88rem;
+  margin-bottom: 16px;
+}
