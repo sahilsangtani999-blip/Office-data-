@@ -135,6 +135,8 @@ export default function SearchResultCard({ result, onSelectSuggestion, onViewSou
               ? "Total Attendance"
               : calculation.operation === "count"
               ? "Total Records"
+              : calculation.operation === "compare"
+              ? "Comparative Difference (Delta)"
               : `${calculation.operation.toUpperCase()} Value`}
           </div>
           <div className={styles.statValue}>
@@ -279,6 +281,14 @@ export default function SearchResultCard({ result, onSelectSuggestion, onViewSou
                       <th>Status</th>
                       <th>Export Downloads</th>
                     </>
+                  ) : calculation?.operation === "compare" ? (
+                    <>
+                      <th>Entity / Period</th>
+                      <th>Metric Value</th>
+                      <th>Sessions / Records</th>
+                      <th>Contributing Document(s)</th>
+                      <th>Status</th>
+                    </>
                   ) : (
                     <>
                       <th>Date</th>
@@ -352,6 +362,24 @@ export default function SearchResultCard({ result, onSelectSuggestion, onViewSou
                               </a>
                             )}
                           </div>
+                        </td>
+                      </>
+                    ) : calculation?.operation === "compare" ? (
+                      <>
+                        <td><strong>{r.label || r.satsang_ghar || "—"}</strong></td>
+                        <td>
+                          <span style={{ fontSize: "0.95rem", fontWeight: 700, color: "var(--brand-maroon)" }}>
+                            {r.primary_value ?? r.average_attendance ?? "—"}
+                          </span>
+                        </td>
+                        <td>{r.count ?? 0} record(s)</td>
+                        <td style={{ fontSize: "0.82rem", color: "var(--text-secondary)" }}>
+                          {r.documents || (r.document_count ? `${r.document_count} doc(s)` : "Verified records")}
+                        </td>
+                        <td>
+                          <span style={{ color: "#16a34a", fontSize: "0.75rem", fontWeight: 600 }}>
+                            Verified
+                          </span>
                         </td>
                       </>
                     ) : (

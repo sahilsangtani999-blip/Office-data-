@@ -211,3 +211,83 @@ export interface ValidationResultData {
   review_history?: ReviewHistoryItem[] | null;
 }
 
+// ============================================================================
+// Phase 3.0 — Multi-Document Analytics & Comparison Types
+// ============================================================================
+
+export type ComparisonDimension = "location" | "period";
+export type ComparisonMetric = "attendance" | "vehicle_wheel" | "assignment";
+
+export interface ComparisonRequest {
+  dimension: ComparisonDimension;
+  metric: ComparisonMetric;
+  sub_metric?: string | null;
+  // Location comparison
+  entity_a?: string | null;
+  entity_b?: string | null;
+  shared_period_start?: string | null;
+  shared_period_end?: string | null;
+  // Period comparison
+  satsang_ghar?: string | null;
+  period_a_start?: string | null;
+  period_a_end?: string | null;
+  period_b_start?: string | null;
+  period_b_end?: string | null;
+}
+
+export interface EntityMetricSummary {
+  label: string;
+  primary_value: number;
+  secondary_value?: number | null;
+  record_count: number;
+  document_count: number;
+  document_names: string[];
+  breakdown_items: Array<Record<string, any>>;
+}
+
+export interface ComparisonResponse {
+  metric: string;
+  dimension: string;
+  unit: string;
+  entity_a: EntityMetricSummary;
+  entity_b: EntityMetricSummary;
+  delta: number;
+  percentage_change?: number | null;
+  summary_sentence: string;
+  breakdown_text: string;
+  source_references: SourceReferenceInfo[];
+  warnings: string[];
+}
+
+export interface MultiDocSummaryRequest {
+  date_start?: string | null;
+  date_end?: string | null;
+  document_ids?: string[] | null;
+}
+
+export interface MultiDocSummaryResponse {
+  total_documents: number;
+  total_attendance: number;
+  average_attendance: number;
+  total_assignments: number;
+  total_vehicles: number;
+  period_start?: string | null;
+  period_end?: string | null;
+  per_document_breakdown: Array<{
+    document_id: string;
+    filename: string;
+    document_type?: string | null;
+    status: string;
+    attendance_count: number;
+    assignment_count: number;
+    vehicle_count: number;
+  }>;
+}
+
+export interface AnalyticsDimensionsResponse {
+  dimensions: Array<{ value: string; label: string }>;
+  metrics: Array<{ value: string; label: string }>;
+  known_satsang_ghars: string[];
+  available_months: Array<{ value: number; label: string }>;
+}
+

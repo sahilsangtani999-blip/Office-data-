@@ -15,6 +15,7 @@ from app.api.validation import router as validation_router
 from app.api.query import router as query_router
 from app.api.sources import router as sources_router
 from app.api.reports import router as reports_router
+from app.api.analytics import router as analytics_router
 from app.services.auth_service import seed_default_users
 
 
@@ -56,6 +57,7 @@ app.include_router(validation_router)
 app.include_router(query_router)
 app.include_router(sources_router)
 app.include_router(reports_router, prefix="/api/v1/reports", tags=["Reports"])
+app.include_router(analytics_router, prefix="/api/v1/analytics", tags=["Analytics & Comparison"])
 
 
 @app.get("/health")

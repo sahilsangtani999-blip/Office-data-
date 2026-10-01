@@ -5,6 +5,7 @@ import Header from "./components/Header";
 import LoginScreen from "./components/LoginScreen";
 import ReportsModal from "./components/ReportsModal";
 import ReviewWorkspaceModal from "./components/ReviewWorkspaceModal";
+import AnalyticsModal from "./components/AnalyticsModal";
 import SearchResultCard from "./components/SearchResultCard";
 import SourcePreviewModal from "./components/SourcePreviewModal";
 import UploadModal from "./components/UploadModal";
@@ -23,6 +24,7 @@ export default function Home() {
   const [modalFormat, setModalFormat] = useState<"excel" | "pdf" | "all">("all");
   const [reportsModalOpen, setReportsModalOpen] = useState(false);
   const [reviewWorkspaceOpen, setReviewWorkspaceOpen] = useState(false);
+  const [analyticsModalOpen, setAnalyticsModalOpen] = useState(false);
   const [uploadHistory, setUploadHistory] = useState<IngestionResponse[]>([]);
 
   useEffect(() => {
@@ -265,6 +267,18 @@ export default function Home() {
                 </svg>
                 Document Review & Validation
               </button>
+              <button
+                type="button"
+                className={styles.analyticsBtn}
+                onClick={() => setAnalyticsModalOpen(true)}
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M18 20V10" />
+                  <path d="M12 20V4" />
+                  <path d="M6 20v-6" />
+                </svg>
+                Multi-Doc Analytics & Comparison
+              </button>
             </div>
           </section>
 
@@ -315,6 +329,13 @@ export default function Home() {
       <ReviewWorkspaceModal
         isOpen={reviewWorkspaceOpen}
         onClose={() => setReviewWorkspaceOpen(false)}
+        user={currentUser}
+      />
+
+      {/* Multi-Document Analytics & Comparison Modal */}
+      <AnalyticsModal
+        isOpen={analyticsModalOpen}
+        onClose={() => setAnalyticsModalOpen(false)}
         user={currentUser}
       />
 

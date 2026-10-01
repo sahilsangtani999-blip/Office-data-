@@ -91,6 +91,15 @@ The platform provides an institutional reporting and export engine:
 - **REST Endpoints**: `/api/v1/reports` endpoints for compilation, listing, detail retrieval, and authenticated file downloads.
 - **Search Discoverability**: Natural-language search queries retrieve matching reports directly with export links. See `docs/REPORTS.md` for details.
 
+## Multi-Document Analytics & Comparison (Phase 3.0)
+
+The platform provides a cross-document aggregation and comparative analytics engine:
+- **Comparison Engine**: Location-to-location (centres) and period-to-period (timeframes) variance computations.
+- **Deterministic Delta Metrics**: Computes absolute and percentage variances across attendance, sewadar duties, and transport logistics.
+- **Lifecycle Integration**: Strictly filters for validated, non-superseded documents (`is_valid = True`).
+- **Query Planner & Search**: Natural language comparison queries automatically map to structured comparison operations with side-by-side metric tables.
+- **REST Endpoints**: `/api/v1/analytics/compare`, `/api/v1/analytics/multi-document-summary`, and `/api/v1/analytics/dimensions`. See `docs/ANALYTICS.md` for details.
+
 ## Configuration
 
 All sensitive configuration is managed via environment variables loaded from a `.env` file (never committed). See `backend/.env.example` for the template.

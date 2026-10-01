@@ -91,6 +91,12 @@ KNOWN_SATSANG_GHARS: List[str] = [
     "Indore East",
     "Indore West",
     "Indore",
+    "Delhi",
+    "Mumbai",
+    "Bangalore",
+    "Chennai",
+    "Kolkata",
+    "Pune",
 ]
 
 KNOWN_REPORT_TYPES: Dict[str, str] = {
@@ -586,16 +592,24 @@ class DeterministicQueryPlanner(QueryPlanner):
     def _extract_comparison_target(
         self, q_lower: str, satsang_ghar: Optional[str], month: Optional[int]
     ) -> Optional[Dict[str, Any]]:
-        """Extracts comparison entities (e.g. between Sukhliya and Bicholi)."""
-        # Find another ghar mentioned
+        """Extracts comparison entities (e.g. between Sukhliya and Bicholi, or September vs October)."""
+        # 1. Check for location comparison (another ghar mentioned)
         for ghar in self._get_known_ghars():
             if ghar != satsang_ghar and re.search(rf"\b{re.escape(ghar.lower())}\b", q_lower):
-                return {"satsang_ghar": ghar}
+                return {
+                    "dimension": "location",
+                    "satsang_ghar": ghar,
+                    "target_ghar": ghar,
+                }
 
-        # Find another month mentioned
+        # 2. Check for period comparison (another month mentioned)
         for m_name, m_num in MONTH_MAP.items():
             if m_num != month and re.search(rf"\b{m_name}\b", q_lower):
-                return {"month": m_num}
+                return {
+                    "dimension": "period",
+                    "month": m_num,
+                    "target_month": m_num,
+                }
 
         return None
 

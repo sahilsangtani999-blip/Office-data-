@@ -264,6 +264,26 @@
   color: #ffffff;
 }
 
+.analyticsBtn {
+  background-color: var(--bg-surface);
+  border: 1px solid #4338ca;
+  color: #4338ca;
+  font-weight: 500;
+  padding: 10px 20px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.15s ease;
+}
+
+.analyticsBtn:hover {
+  background-color: #4338ca;
+  color: #ffffff;
+}
+
+
 
 /* Activity / Status Section */
 .activitySection {

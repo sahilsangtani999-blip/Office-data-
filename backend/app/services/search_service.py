@@ -12,6 +12,7 @@ Applies:
 - Machine-readable structured SearchResult models
 """
 
+import calendar
 from datetime import date
 from typing import Any, Dict, List, Optional, Tuple, Union
 import uuid
@@ -31,6 +32,7 @@ from app.models import (
     SourceReference,
     VehicleWheelData,
 )
+from app.schemas.analytics import ComparisonRequest
 from app.schemas.search import (
     QueryPlan,
     QueryPlanResult,
@@ -38,6 +40,7 @@ from app.schemas.search import (
     SearchResult,
     SourceReferenceInfo,
 )
+from app.services.analytics_service import AnalyticsService
 from app.services.query_planner import QueryPlanner, get_query_planner
 
 
@@ -763,10 +766,110 @@ class SearchService:
         original_question: str,
         interpreted_dict: Dict[str, Any],
     ) -> SearchResult:
-        """Compares attendance between two entities (e.g. two Satsang Ghars or periods)."""
+        """Compares attendance, vehicles, or assignments between two entities or periods."""
         target = plan.comparison_target or {}
-        other_ghar_name = target.get("satsang_ghar")
+        analytics_svc = AnalyticsService(self.db)
 
+        metric = "attendance"
+        if plan.record_type == "vehicle_wheel":
+            metric = "vehicle_wheel"
+        elif plan.record_type == "assignment":
+            metric = "assignment"
+
+        # Case 1: Period comparison
+        is_period_comparison = (
+            target.get("dimension") == "period"
+            or (plan.month is not None and (target.get("month") is not None or target.get("target_month") is not None))
+        )
+        if is_period_comparison:
+            month_a = plan.month or 9
+            month_b = target.get("target_month") or target.get("month")
+            if not month_b:
+                return SearchResult(
+                    original_question=original_question,
+                    interpreted_query=interpreted_dict,
+                    status="clarification_required",
+                    answer="Please specify two time periods to compare.",
+                    records=[],
+                    total_records=0,
+                    calculation=None,
+                    source_references=[],
+                    clarification_required=True,
+                    clarification_question="Which two time periods would you like to compare?",
+                )
+            year = plan.year or 2026
+            p_a_start = date(year, month_a, 1)
+            p_a_end = date(year, month_a, calendar.monthrange(year, month_a)[1])
+            p_b_start = date(year, month_b, 1)
+            p_b_end = date(year, month_b, calendar.monthrange(year, month_b)[1])
+
+            req = ComparisonRequest(
+                dimension="period",
+                metric=metric,
+                satsang_ghar=ghar.name if ghar else None,
+                period_a_start=p_a_start,
+                period_a_end=p_a_end,
+                period_b_start=p_b_start,
+                period_b_end=p_b_end,
+                sub_metric=plan.role if metric == "assignment" else (plan.vehicle_type if metric == "vehicle_wheel" else plan.numeric_operation),
+            )
+            try:
+                res = analytics_svc.compare(req)
+            except Exception as e:
+                return SearchResult(
+                    original_question=original_question,
+                    interpreted_query=interpreted_dict,
+                    status="error",
+                    answer=f"Period comparison failed: {e}",
+                    records=[],
+                    total_records=0,
+                    calculation=None,
+                    source_references=[],
+                )
+
+            records = [
+                {
+                    "satsang_ghar": res.entity_a.label,
+                    "label": res.entity_a.label,
+                    "primary_value": res.entity_a.primary_value,
+                    "average_attendance": res.entity_a.primary_value if metric == "attendance" else None,
+                    "count": res.entity_a.record_count,
+                    "document_count": res.entity_a.document_count,
+                    "documents": ", ".join(res.entity_a.document_names),
+                },
+                {
+                    "satsang_ghar": res.entity_b.label,
+                    "label": res.entity_b.label,
+                    "primary_value": res.entity_b.primary_value,
+                    "average_attendance": res.entity_b.primary_value if metric == "attendance" else None,
+                    "count": res.entity_b.record_count,
+                    "document_count": res.entity_b.document_count,
+                    "documents": ", ".join(res.entity_b.document_names),
+                },
+            ]
+            total_recs = res.entity_a.record_count + res.entity_b.record_count
+            calc = SearchCalculation(
+                operation="compare",
+                value=res.delta,
+                unit=res.unit,
+                records_counted=total_recs,
+                formula_description=f"Period Comparison: {res.entity_b.label} vs {res.entity_a.label}",
+                breakdown=res.breakdown_text,
+            )
+            return SearchResult(
+                original_question=original_question,
+                interpreted_query=interpreted_dict,
+                status="success",
+                answer=res.summary_sentence,
+                records=records,
+                total_records=total_recs,
+                calculation=calc,
+                source_references=res.source_references,
+                warnings=res.warnings,
+            )
+
+        # Case 2: Location comparison
+        other_ghar_name = target.get("satsang_ghar") or target.get("target_ghar")
         if not ghar or not other_ghar_name:
             return SearchResult(
                 original_question=original_question,
@@ -794,39 +897,75 @@ class SearchService:
                 source_references=[],
             )
 
-        records_1 = self.db.query(Attendance).filter(Attendance.satsang_ghar_id == ghar.id).all()
-        records_2 = self.db.query(Attendance).filter(Attendance.satsang_ghar_id == other_ghar.id).all()
+        shared_start = None
+        shared_end = None
+        if plan.month:
+            year = plan.year or 2026
+            shared_start = date(year, plan.month, 1)
+            shared_end = date(year, plan.month, calendar.monthrange(year, plan.month)[1])
 
-        v1 = [r.count_value for r in records_1 if r.count_value is not None]
-        v2 = [r.count_value for r in records_2 if r.count_value is not None]
-
-        avg1 = round(sum(v1) / len(v1), 2) if v1 else 0.0
-        avg2 = round(sum(v2) / len(v2), 2) if v2 else 0.0
-        diff = round(avg1 - avg2, 2)
-
-        ans = (
-            f"Comparison of Average Attendance: {ghar.name} averaged {avg1} ({len(v1)} records), "
-            f"while {other_ghar.name} averaged {avg2} ({len(v2)} records). "
-            f"Difference is {diff:+0.2f}."
+        req = ComparisonRequest(
+            dimension="location",
+            metric=metric,
+            entity_a=ghar.name,
+            entity_b=other_ghar.name,
+            shared_period_start=shared_start,
+            shared_period_end=shared_end,
+            sub_metric=plan.role if metric == "assignment" else (plan.vehicle_type if metric == "vehicle_wheel" else plan.numeric_operation),
         )
+        try:
+            res = analytics_svc.compare(req)
+        except Exception as e:
+            return SearchResult(
+                original_question=original_question,
+                interpreted_query=interpreted_dict,
+                status="error",
+                answer=f"Location comparison failed: {e}",
+                records=[],
+                total_records=0,
+                calculation=None,
+                source_references=[],
+            )
 
+        records = [
+            {
+                "satsang_ghar": ghar.name,
+                "label": ghar.name,
+                "primary_value": res.entity_a.primary_value,
+                "average_attendance": res.entity_a.primary_value if metric == "attendance" else None,
+                "count": res.entity_a.record_count,
+                "document_count": res.entity_a.document_count,
+                "documents": ", ".join(res.entity_a.document_names),
+            },
+            {
+                "satsang_ghar": other_ghar.name,
+                "label": other_ghar.name,
+                "primary_value": res.entity_b.primary_value,
+                "average_attendance": res.entity_b.primary_value if metric == "attendance" else None,
+                "count": res.entity_b.record_count,
+                "document_count": res.entity_b.document_count,
+                "documents": ", ".join(res.entity_b.document_names),
+            },
+        ]
+        total_recs = res.entity_a.record_count + res.entity_b.record_count
+        calc = SearchCalculation(
+            operation="compare",
+            value=res.delta,
+            unit=res.unit,
+            records_counted=total_recs,
+            formula_description=f"Location Comparison: {other_ghar.name} vs {ghar.name}",
+            breakdown=res.breakdown_text,
+        )
         return SearchResult(
             original_question=original_question,
             interpreted_query=interpreted_dict,
             status="success",
-            answer=ans,
-            records=[
-                {"satsang_ghar": ghar.name, "average_attendance": avg1, "count": len(v1)},
-                {"satsang_ghar": other_ghar.name, "average_attendance": avg2, "count": len(v2)},
-            ],
-            total_records=len(records_1) + len(records_2),
-            calculation=SearchCalculation(
-                operation="compare",
-                value=diff,
-                unit="difference",
-                records_counted=len(v1) + len(v2),
-            ),
-            source_references=[],
+            answer=res.summary_sentence,
+            records=records,
+            total_records=total_recs,
+            calculation=calc,
+            source_references=res.source_references,
+            warnings=res.warnings,
         )
 
     # -------------------------------------------------------------------------
