@@ -291,3 +291,67 @@ export interface AnalyticsDimensionsResponse {
   available_months: Array<{ value: number; label: string }>;
 }
 
+// ============================================================================
+// Phase 3.2 — Visual Analytics, Trends & Executive Dashboard Types
+// ============================================================================
+
+export interface TrendDataPoint {
+  period_label: string;
+  date_key?: string | null;
+  value: number;
+  moving_average?: number | null;
+  percentage_change?: number | null;
+  record_count: number;
+}
+
+export interface TrendAnalysisResponse {
+  metric: string;
+  target_entity?: string | null;
+  interval: string;
+  data_points: TrendDataPoint[];
+  overall_direction: "growth" | "decline" | "stable" | "neutral";
+  growth_rate_overall?: number | null;
+  peak_period?: string | null;
+  peak_value?: number | null;
+  lowest_period?: string | null;
+  lowest_value?: number | null;
+  summary_text: string;
+}
+
+export interface DashboardKPIs {
+  total_attendance: number;
+  average_session_attendance: number;
+  total_meetings: number;
+  active_centers_count: number;
+  total_duty_assignments: number;
+  unique_sevadars: number;
+  total_vehicles_recorded: number;
+}
+
+export interface CenterRanking {
+  satsang_ghar: string;
+  total_attendance: number;
+  average_attendance: number;
+  sessions: number;
+}
+
+export interface ExecutiveDashboardResponse {
+  summary_kpis: DashboardKPIs;
+  center_rankings: CenterRanking[];
+  vehicle_breakdown: Record<string, number>;
+  role_breakdown: Record<string, number>;
+  monthly_trend: TrendDataPoint[];
+}
+
+export interface OperationalAnomaly {
+  anomaly_type: "attendance_spike" | "attendance_drop" | "schedule_conflict" | "vehicle_load_imbalance";
+  severity: "HIGH" | "MEDIUM" | "LOW";
+  title: string;
+  description: string;
+  date?: string | null;
+  entity?: string | null;
+  metric_value?: number | null;
+  baseline_value?: number | null;
+  source_reference?: Record<string, any> | null;
+}
+

@@ -560,9 +560,14 @@ class DeterministicQueryPlanner(QueryPlanner):
         source_requirement: bool,
         record_type: RecordType,
     ) -> SearchIntent:
-        """Maps user question to one of the 10 supported search intents."""
         if "compare" in q_lower or "difference between" in q_lower or "versus" in q_lower or " vs " in q_lower:
             return "compare"
+
+        if any(w in q_lower for w in ["trend", "trajectory", "growth", "over time", "trendline"]):
+            return "trend"
+
+        if any(w in q_lower for w in ["executive dashboard", "operational dashboard", "system overview", "overall dashboard", "platform stats", "dashboard"]):
+            return "dashboard"
 
         if source_requirement and any(w in q_lower for w in ["source of", "what is the source", "where did"]):
             return "source"

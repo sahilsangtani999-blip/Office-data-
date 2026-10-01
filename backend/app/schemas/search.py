@@ -20,6 +20,8 @@ SearchIntent = Literal[
     "lookup",
     "report",
     "source",
+    "trend",
+    "dashboard",
 ]
 
 # Supported numeric operations

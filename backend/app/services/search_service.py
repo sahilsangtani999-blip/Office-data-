@@ -167,6 +167,10 @@ class SearchService:
         try:
             if plan.intent == "compare":
                 return self._execute_compare(plan, ghar_match, original_question, interpreted_dict)
+            if plan.intent == "trend":
+                return self._execute_trend(plan, ghar_match, original_question, interpreted_dict)
+            if plan.intent == "dashboard":
+                return self._execute_dashboard(plan, original_question, interpreted_dict)
 
             if plan.record_type == "attendance":
                 return self._execute_attendance_search(plan, ghar_match, original_question, interpreted_dict)
@@ -966,6 +970,112 @@ class SearchService:
             calculation=calc,
             source_references=res.source_references,
             warnings=res.warnings,
+        )
+
+    def _execute_trend(
+        self,
+        plan: QueryPlan,
+        ghar: Optional[SatsangGhar],
+        original_question: str,
+        interpreted_dict: Dict[str, Any],
+    ) -> SearchResult:
+        """Executes trend trajectory analysis and formats as a structured search result."""
+        from app.services.trend_service import TrendService
+        trend_svc = TrendService(self.db)
+        metric = "attendance"
+        if plan.record_type == "vehicle_wheel":
+            metric = "vehicle_wheel"
+        elif plan.record_type == "assignment":
+            metric = "assignment"
+
+        center_name = ghar.name if ghar else (plan.satsang_ghar if plan.satsang_ghar else None)
+        trend_res = trend_svc.get_trends(
+            center=center_name,
+            metric=metric,
+            start_date=plan.date_start,
+            end_date=plan.date_end,
+            interval="month",
+        )
+
+        records = [
+            {
+                "period": p.period_label,
+                "value": p.value,
+                "moving_average": p.moving_average,
+                "growth": f"{p.percentage_change}%" if p.percentage_change is not None else "-",
+                "records": p.record_count,
+            }
+            for p in trend_res.data_points
+        ]
+
+        calc = SearchCalculation(
+            operation="trend",
+            value=trend_res.growth_rate_overall if trend_res.growth_rate_overall is not None else (trend_res.peak_value or 0),
+            unit="%" if trend_res.growth_rate_overall is not None else "units",
+            records_counted=sum(p.record_count for p in trend_res.data_points),
+            formula_description=f"Trajectory: {trend_res.overall_direction.upper()} (Peak: {trend_res.peak_value} in {trend_res.peak_period})",
+            breakdown=trend_res.summary_text,
+        )
+
+        return SearchResult(
+            original_question=original_question,
+            interpreted_query=interpreted_dict,
+            status="success" if trend_res.data_points else "no_results",
+            answer=trend_res.summary_text,
+            records=records,
+            total_records=len(trend_res.data_points),
+            calculation=calc,
+            source_references=[],
+            warnings=[],
+        )
+
+    def _execute_dashboard(
+        self,
+        plan: QueryPlan,
+        original_question: str,
+        interpreted_dict: Dict[str, Any],
+    ) -> SearchResult:
+        """Executes executive dashboard aggregation and formats as a structured search result."""
+        from app.services.trend_service import TrendService
+        trend_svc = TrendService(self.db)
+        dash = trend_svc.get_executive_dashboard()
+
+        records = [
+            {
+                "center": r.satsang_ghar,
+                "total_attendance": r.total_attendance,
+                "average_attendance": r.average_attendance,
+                "sessions": r.sessions,
+            }
+            for r in dash.center_rankings
+        ]
+
+        summary_msg = (
+            f"Executive Operational Summary: {dash.summary_kpis.total_attendance} attendees across "
+            f"{dash.summary_kpis.total_meetings} verified sessions in {dash.summary_kpis.active_centers_count} active centers. "
+            f"{dash.summary_kpis.total_duty_assignments} sewa assignments ({dash.summary_kpis.unique_sevadars} unique sevadars) "
+            f"and {dash.summary_kpis.total_vehicles_recorded} vehicles logged."
+        )
+
+        calc = SearchCalculation(
+            operation="dashboard",
+            value=dash.summary_kpis.total_attendance,
+            unit="attendees",
+            records_counted=dash.summary_kpis.total_meetings,
+            formula_description=f"Active Centers: {dash.summary_kpis.active_centers_count}, Average Session: {dash.summary_kpis.average_session_attendance}",
+            breakdown=summary_msg,
+        )
+
+        return SearchResult(
+            original_question=original_question,
+            interpreted_query=interpreted_dict,
+            status="success",
+            answer=summary_msg,
+            records=records,
+            total_records=len(records),
+            calculation=calc,
+            source_references=[],
+            warnings=[],
         )
 
     # -------------------------------------------------------------------------

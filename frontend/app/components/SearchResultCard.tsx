@@ -137,6 +137,10 @@ export default function SearchResultCard({ result, onSelectSuggestion, onViewSou
               ? "Total Records"
               : calculation.operation === "compare"
               ? "Comparative Difference (Delta)"
+              : calculation.operation === "trend"
+              ? "Trajectory Growth & Trend Indicator"
+              : calculation.operation === "dashboard"
+              ? "Executive Platform Summary"
               : `${calculation.operation.toUpperCase()} Value`}
           </div>
           <div className={styles.statValue}>

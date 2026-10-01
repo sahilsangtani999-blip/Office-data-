@@ -100,6 +100,15 @@ The platform provides a cross-document aggregation and comparative analytics eng
 - **Query Planner & Search**: Natural language comparison queries automatically map to structured comparison operations with side-by-side metric tables.
 - **REST Endpoints**: `/api/v1/analytics/compare`, `/api/v1/analytics/multi-document-summary`, and `/api/v1/analytics/dimensions`. See `docs/ANALYTICS.md` for details.
 
+## Visual Analytics, Trend Trajectories & Operational Insights (Phase 3.2)
+
+The platform provides an executive visualization and time-series analytics suite:
+- **Trend Calculation Engine**: Metric trajectories (attendance, sewadars, satsangs) bucketed by month, quarter, or year with 3-period moving average smoothing.
+- **Executive Dashboard**: High-level organizational KPIs, growth percentages, and center performance leaderboards.
+- **Operational Anomaly Detection**: Automated flagging of steep drops ($\le -40\%$ critical) or unusual surges ($\ge +25\%$ warning) between consecutive operational periods.
+- **Interactive UI**: Native responsive SVG charts, center filtering, and dedicated Executive Dashboard modal with zero heavy charting dependencies.
+- **Query Planner & Search**: Direct support for natural language trend inquiries returning embedded visualization cards. See `docs/TRENDS_AND_DASHBOARD.md` for details.
+
 ## Configuration
 
 All sensitive configuration is managed via environment variables loaded from a `.env` file (never committed). See `backend/.env.example` for the template.
