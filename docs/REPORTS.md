@@ -18,7 +18,10 @@ Phase 3.1 introduces an institutional, deterministic report compilation and expo
    - Permission `generate_reports` assigned to `admin` and `reviewer` roles.
    - Standard `read` permission required to list, inspect, and download reports.
    - Deletion restricted strictly to `admin`.
-4. **Natural Language Search Integration**:
+4. **Document Lifecycle & Data Validation Filtering**:
+   - Only records from approved/validated documents are included in compiled reports.
+   - Records originating from documents marked `needs_correction`, `rejected`, `superseded`, or `pending_review` are excluded from report aggregations.
+5. **Natural Language Search Integration**:
    - Queries mentioning "report", "monthly report", "summary report", etc., are intercepted by `SearchService`, returning registered report records with direct download URLs in supporting records.
 
 ---
@@ -105,5 +108,5 @@ Suite: `backend/tests/test_reports.py` (7 comprehensive integration tests):
 6. `test_6_api_delete_report_admin_only`: Confirms only `admin` can delete reports (`reviewer` receives `403 Forbidden`).
 7. `test_7_search_reports_query`: Verifies natural language query "show monthly reports" retrieves report records via `SearchService`.
 
-**Full backend test suite**: All 124 tests pass cleanly.
+**Full backend test suite**: All 144 tests pass cleanly.
 **Frontend build**: Next.js Turbopack production build succeeds with 0 errors.

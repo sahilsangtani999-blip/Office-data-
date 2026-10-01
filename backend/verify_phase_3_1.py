@@ -13,7 +13,7 @@ import time
 import openpyxl
 from playwright.sync_api import sync_playwright
 
-ARTIFACTS_DIR = Path(r"C:\Users\sahil\.gemini\antigravity-ide\brain\bc906604-3afc-4fda-abc1-bc627d1306a7\verification_screenshots")
+ARTIFACTS_DIR = Path(r"C:\Users\sahil\.gemini\antigravity-ide\brain\ab1688f9-4fb0-4baa-8b07-848b66b1e337\verification_screenshots_phase_3_1")
 ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
 DOWNLOADS_DIR = ARTIFACTS_DIR / "downloads"
 DOWNLOADS_DIR.mkdir(parents=True, exist_ok=True)
@@ -208,10 +208,10 @@ def run_verification():
         step9_pass = (
             os.path.exists(csv_file_path)
             and os.path.getsize(csv_file_path) > 100
-            and "Total Attendance,480" in csv_content
-            and "Average Attendance,80.0" in csv_content
-            and "Duty Rosters,5" in csv_content
-            and "Vehicles Logged,156" in csv_content
+            and "Total Attendance Recorded,480" in csv_content
+            and "Average Attendance per Meeting,80.0" in csv_content
+            and "Total Duty Assignments,5" in csv_content
+            and "Total Vehicles Recorded,156" in csv_content
         )
         results["Step 9: Test Download CSV (.csv) and verify CSV content"] = {
             "status": "PASS" if step9_pass else "FAIL",

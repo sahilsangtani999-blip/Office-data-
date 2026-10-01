@@ -14,16 +14,18 @@ import uuid
 import openpyxl
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
-from sqlalchemy import desc, func
+from sqlalchemy import desc, func, or_
 from sqlalchemy.orm import Session
 
 from app.models import (
     Assignment,
     Attendance,
+    Document,
     Person,
     Report,
     Role,
     SatsangGhar,
+    SourceReference,
     VehicleWheelData,
 )
 from app.schemas.reports import ReportCreateRequest
@@ -186,7 +188,17 @@ class ReportService:
         self, start_date: Optional[date], end_date: Optional[date], ghar: Optional[SatsangGhar]
     ) -> Dict[str, Any]:
         """Queries and summarizes attendance records."""
-        query = self.db.query(Attendance)
+        query = (
+            self.db.query(Attendance)
+            .join(Attendance.source_reference, isouter=True)
+            .join(SourceReference.document, isouter=True)
+            .filter(
+                or_(
+                    Document.id == None,
+                    Document.status.notin_(["needs_correction", "rejected", "superseded", "pending_review"]),
+                )
+            )
+        )
         if start_date:
             query = query.filter(Attendance.date >= start_date)
         if end_date:
@@ -237,7 +249,17 @@ class ReportService:
         self, start_date: Optional[date], end_date: Optional[date], ghar: Optional[SatsangGhar]
     ) -> Dict[str, Any]:
         """Queries and summarizes duty assignment records."""
-        query = self.db.query(Assignment)
+        query = (
+            self.db.query(Assignment)
+            .join(Assignment.source_reference, isouter=True)
+            .join(SourceReference.document, isouter=True)
+            .filter(
+                or_(
+                    Document.id == None,
+                    Document.status.notin_(["needs_correction", "rejected", "superseded", "pending_review"]),
+                )
+            )
+        )
         if start_date:
             query = query.filter(Assignment.date >= start_date)
         if end_date:
@@ -278,7 +300,17 @@ class ReportService:
         self, start_date: Optional[date], end_date: Optional[date], ghar: Optional[SatsangGhar]
     ) -> Dict[str, Any]:
         """Queries and summarizes vehicle/wheel data records."""
-        query = self.db.query(VehicleWheelData)
+        query = (
+            self.db.query(VehicleWheelData)
+            .join(VehicleWheelData.source_reference, isouter=True)
+            .join(SourceReference.document, isouter=True)
+            .filter(
+                or_(
+                    Document.id == None,
+                    Document.status.notin_(["needs_correction", "rejected", "superseded", "pending_review"]),
+                )
+            )
+        )
         if start_date:
             query = query.filter(VehicleWheelData.date >= start_date)
         if end_date:
